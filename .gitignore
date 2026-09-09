@@ -1,0 +1,41 @@
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*credentials*.json
+google-service-account*.json
+secrets/
+*.pem
+*.key
+
+# Resume files / user data (never committed)
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+htmlcov/
+.coverage
+
+# Playwright / browser session data
+.playwright/
+playwright-report/
+browser_data/
+
+# DB / local artifacts
+*.db
+*.sqlite3
+pgdata/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,41 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: job_bot_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: job_bot
+      POSTGRES_PASSWORD: job_bot
+      POSTGRES_DB: job_bot
+    ports:
+      # Host port 5544 (not 5432): this machine already has a native
+      # Windows Postgres service and another project's Postgres container
+      # bound to 5432/5433. Avoids colliding with either.
+      - "5544:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U job_bot -d job_bot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: job_bot_redis
+    restart: unless-stopped
+    ports:
+      # Host port 6380 (not 6379): another project's Redis container
+      # already holds 6379 on this machine.
+      - "6380:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  pgdata:
+  redisdata:
