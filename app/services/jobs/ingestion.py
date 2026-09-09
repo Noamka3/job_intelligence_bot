@@ -22,6 +22,7 @@ from app.models.crawl_run import CrawlRun
 from app.models.enums import CrawlRunStatus, JobStatus
 from app.models.job_posting import JobPosting
 from app.services.embeddings.base import EmbeddingProvider
+from app.services.jobs.location import classify_country
 from app.services.jobs.normalization import (
     build_embedding_text,
     build_normalized_description,
@@ -134,6 +135,7 @@ def _ingest_new_job(
         team=details.team,
         location_text=details.location_text,
         normalized_location=normalize_location(details.location_text),
+        country=classify_country(details.location_text),
         remote_type=details.remote_type,
         employment_type=details.employment_type,
         description=details.description,
@@ -184,6 +186,7 @@ def _refresh_existing_job(
     existing.team = details.team
     existing.location_text = details.location_text
     existing.normalized_location = normalize_location(details.location_text)
+    existing.country = classify_country(details.location_text)
     existing.remote_type = details.remote_type
     existing.employment_type = details.employment_type
     existing.description = details.description

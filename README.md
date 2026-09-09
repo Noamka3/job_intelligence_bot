@@ -17,21 +17,40 @@ all persisted with real embeddings - see `docs/job_sources.md` for the
 Comeet-specific findings from that verification.
 
 Embeddings default to a **free local model** (`EMBEDDING_PROVIDER=local`,
-see `app/services/embeddings/local_provider.py`) - no OpenAI key needed
-for job ingestion to work end-to-end. OpenAI is still used for one thing
-regardless: structured CV extraction on resume upload (Phase 2) - cheap
-(a few cents total), needs `OPENAI_API_KEY` only when you actually use
-that feature. No matching/ranking yet (Phase 5).
+see `app/services/embeddings/local_provider.py`) - no API key needed for
+job ingestion to work end-to-end. Structured CV extraction (Phase 2)
+defaults to a **free local LLM via Ollama** (`LLM_PROVIDER=ollama`) too -
+OpenAI is only used if you explicitly switch either provider to `openai`.
+**Honest caveat, found during live testing on this dev machine:**
+CPU-only Ollama inference was extremely slow and once destabilized the
+whole machine badly enough to crash Docker Desktop (see the
+"Local LLM performance" troubleshooting entry below) - a 120s timeout
+(`OLLAMA_TIMEOUT_SECONDS`) now bounds the damage, and a resume upload
+always succeeds regardless (raw text + embedding are saved even if
+structured extraction fails or times out - see
+`app/services/candidate/profile_service.py`), but extraction quality on
+the default small model (`llama3.2:3b`) was noticeably weak on a real
+13-page CV. If this matters to you, `LLM_PROVIDER=openai` is more
+reliable for this one feature.
+
+Israel-only job filtering (`GET /jobs` defaults to `israel_only=true`) is
+in per user request - see `app/services/jobs/location.py`.
+
+No matching/ranking yet (Phase 5).
 
 ## Prerequisites
 
 - Python 3.12+
 - Docker Desktop
-- A Google Cloud service account with Sheets API read access (Phase 3)
-- An OpenAI API key - **optional**: only needed for resume structured
-  extraction (Phase 2's `/candidate/resume` and `rebuild-profile`) and if
-  you switch `EMBEDDING_PROVIDER` to `openai`. Job ingestion (Phase 4)
-  works fully without one - it defaults to a free local embedding model.
+- A Google Cloud service account with Sheets API read access (Phase 3) -
+  **or** skip it and use `app.cli import-excel <path>` instead, see below
+- [Ollama](https://ollama.com) installed and running (`ollama serve`),
+  with a model pulled (`ollama pull llama3.2:3b`) - free, used by default
+  for resume structured extraction (Phase 2). See the performance caveat
+  above; an OpenAI key is a more reliable alternative for this feature.
+- An OpenAI API key - **optional**: only if you switch `LLM_PROVIDER` or
+  `EMBEDDING_PROVIDER` to `openai`. Job ingestion (Phase 4) works fully
+  without one either way - it defaults to a free local embedding model.
 - A Twilio account with WhatsApp enabled (Phase 7)
 
 ## Setup
@@ -143,6 +162,23 @@ port you think Postgres/Redis use. Check with (PowerShell):
 `Get-NetTCPConnection -LocalPort 5432` (or whichever port). This project
 deliberately uses 5544/6380 for exactly this reason - see above.
 
+**Local LLM performance (Ollama, Phase 2's structured CV extraction).**
+On this dev machine, CPU-only inference was severe: a single short-text
+extraction call took 5-9 minutes, and running a couple of test calls
+concurrently pushed the machine into resource exhaustion bad enough to
+crash Docker Desktop's engine outright (`docker ps` failed with
+`dockerDesktopLinuxEngine` unreachable; fixed by killing and relaunching
+`Docker Desktop.exe`, data was intact afterward - Postgres's normal WAL
+crash recovery handled it). Mitigations now in place: `OLLAMA_TIMEOUT_SECONDS`
+(default 120s) bounds a single request, and resume upload never blocks on
+this step failing - see `_extract_structured_profile_best_effort` in
+`app/services/candidate/profile_service.py`. Still, avoid running more
+than one Ollama call at a time on constrained hardware, and don't be
+surprised if it's slow. A real end-to-end upload of a 13-page PDF
+completed in 66s on a "quiet" system (no other load) - much better than
+the worst case, but still slow, and the extraction quality was weak
+(mostly empty fields) even then.
+
 **Celery on Windows (Phase 6+).** Celery's default worker pool doesn't
 work on native Windows. The worker and beat scheduler are meant to run
 inside Docker (Linux) containers, not directly on the Windows host -
@@ -200,9 +236,10 @@ curl "http://127.0.0.1:8000/sources?source_type=comeet"
 # Crawl every due CareerSource now (blocks until done - see caveat below)
 curl -X POST http://127.0.0.1:8000/operations/crawl-now
 
-# List / inspect discovered jobs
+# List / inspect discovered jobs (israel_only defaults to true)
 curl http://127.0.0.1:8000/jobs
 curl "http://127.0.0.1:8000/jobs?status=active&company_id=1"
+curl "http://127.0.0.1:8000/jobs?title=junior&israel_only=false"
 curl http://127.0.0.1:8000/jobs/1
 ```
 
@@ -216,6 +253,7 @@ Celery Beat dispatching to a worker instead of blocking one HTTP call.
 ```bash
 .venv/Scripts/python.exe -m app.cli rebuild-profile
 .venv/Scripts/python.exe -m app.cli sync-sheet
+.venv/Scripts/python.exe -m app.cli import-excel "C:\path\to\companies.xlsx"
 .venv/Scripts/python.exe -m app.cli crawl-now
 .venv/Scripts/python.exe -m app.cli crawl-company "Torq"
 ```
@@ -223,7 +261,10 @@ Celery Beat dispatching to a worker instead of blocking one HTTP call.
 `rebuild-profile` re-runs structured extraction + embedding for the active
 CV in place (useful after tweaking the extraction prompt or switching
 embedding models), without re-uploading the file. `sync-sheet` runs the
-same company sync as `POST /sync/google-sheet`. `crawl-now` crawls every
+same company sync as `POST /sync/google-sheet`; `import-excel` does the
+same upsert/disable logic from a local .xlsx export instead (company name
+in column A, URL in column B) - no Google credentials needed, useful
+before setting those up or for a one-off import. `crawl-now` crawls every
 due `CareerSource`; `crawl-company` crawls just one company's sources, by
 name - useful for testing a single adapter without waiting on a full
 sync. More commands (`score-all`, `send-digest`, ...) are added alongside

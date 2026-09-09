@@ -14,9 +14,15 @@ from sqlalchemy.orm import Session
 from app.core.paths import RESUME_STORAGE_DIR
 from app.core.timezone import utc_now
 from app.models.candidate_profile import CandidateProfile
+from app.schemas.candidate import StructuredCandidateProfile
 from app.services.candidate.extraction import extract_text
 from app.services.candidate.normalization import normalize_text
-from app.services.candidate.structured_profile import extract_structured_profile
+from app.services.candidate.structured_profile import (
+    OllamaTimeoutError,
+    OllamaUnavailableError,
+    OpenAINotConfiguredError,
+    extract_structured_profile,
+)
 from app.services.embeddings.base import EmbeddingProvider
 
 logger = logging.getLogger(__name__)
@@ -50,7 +56,7 @@ def ingest_resume(
 
     raw_text = extract_text(filename, content)
     normalized_text = normalize_text(raw_text)
-    structured = extract_structured_profile(normalized_text)
+    structured = _extract_structured_profile_best_effort(normalized_text)
     embedding = embedding_provider.embed_one(normalized_text)
 
     next_version = (
@@ -103,6 +109,25 @@ def get_active_profile(db: Session) -> CandidateProfile | None:
 def list_profiles(db: Session) -> list[CandidateProfile]:
     rows = db.execute(select(CandidateProfile).order_by(CandidateProfile.version.desc())).scalars()
     return list(rows)
+
+
+def _extract_structured_profile_best_effort(normalized_text: str) -> StructuredCandidateProfile:
+    """Structured extraction is a secondary signal - spec §6 explicitly
+    says matching must never depend on it alone, raw_text/embedding are
+    what actually matter. So a slow or unavailable LLM (observed on this
+    dev machine: local CPU-only inference can take minutes to hours) must
+    never block the resume itself from being saved; it degrades to an
+    empty profile and logs clearly instead. Re-run via `rebuild-profile`
+    once the LLM is fast/available again.
+    """
+    try:
+        return extract_structured_profile(normalized_text)
+    except (OpenAINotConfiguredError, OllamaUnavailableError, OllamaTimeoutError) as exc:
+        logger.warning(
+            "structured CV extraction failed, saving resume without it",
+            extra={"error_type": type(exc).__name__, "error": str(exc)},
+        )
+        return StructuredCandidateProfile()
 
 
 def _store_resume_file(file_hash: str, filename: str, content: bytes) -> None:

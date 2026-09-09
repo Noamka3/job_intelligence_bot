@@ -1,10 +1,18 @@
-"""One-time structured extraction from a normalized CV, via the OpenAI
-chat completions structured-output API. Runs once per resume upload (a
-rare event), never in a hot path - see spec §45 cost control.
+"""One-time structured extraction from a normalized CV. Runs once per
+resume upload (a rare event), never in a hot path - see spec §45 cost
+control.
+
+Two providers, selected by Settings.llm_provider:
+- ollama (default): free, runs on this machine, no API key.
+- openai: needs OPENAI_API_KEY.
+Both use JSON-schema-constrained structured output so the result always
+matches StructuredCandidateProfile's shape.
 """
 
 from __future__ import annotations
 
+import httpx
+import ollama
 from openai import OpenAI
 
 from app.core.config import get_settings
@@ -18,16 +26,58 @@ _SYSTEM_PROMPT = (
     "professional (non-academic) experience in years, or null if it cannot "
     "be reasonably estimated. seniority should be one short word such as "
     "'intern', 'junior', 'mid', 'senior' based on the candidate's own "
-    "experience level, or null if unclear."
+    "experience level, or null if unclear. Respond with JSON only."
 )
+
+
+class OpenAINotConfiguredError(RuntimeError):
+    def __init__(self) -> None:
+        super().__init__(
+            "OPENAI_API_KEY is not set. Set LLM_PROVIDER=ollama (the default) to use the "
+            "free local model instead, or set OPENAI_API_KEY - see README.md."
+        )
+
+
+class OllamaUnavailableError(RuntimeError):
+    def __init__(self, base_url: str, cause: Exception) -> None:
+        super().__init__(
+            f"Could not reach Ollama at {base_url}. Is `ollama serve` running, and has "
+            f"the model been pulled (`ollama pull <model>`)? Original error: {cause}"
+        )
+
+
+class OllamaTimeoutError(RuntimeError):
+    def __init__(self, timeout_seconds: int) -> None:
+        super().__init__(
+            f"Ollama did not respond within {timeout_seconds}s. CPU-only local-LLM inference "
+            "can be very slow on some hardware - try a smaller model (OLLAMA_CHAT_MODEL), "
+            "raise OLLAMA_TIMEOUT_SECONDS, or set LLM_PROVIDER=openai instead."
+        )
 
 
 def extract_structured_profile(normalized_text: str) -> StructuredCandidateProfile:
     settings = get_settings()
-    client = OpenAI(api_key=settings.openai_api_key)
+    if settings.llm_provider == "openai":
+        return _extract_via_openai(
+            normalized_text, settings.openai_api_key, settings.openai_chat_model
+        )
+    return _extract_via_ollama(
+        normalized_text,
+        settings.ollama_base_url,
+        settings.ollama_chat_model,
+        settings.ollama_timeout_seconds,
+    )
+
+
+def _extract_via_openai(
+    normalized_text: str, api_key: str, model: str
+) -> StructuredCandidateProfile:
+    if not api_key:
+        raise OpenAINotConfiguredError()
+    client = OpenAI(api_key=api_key)
 
     completion = client.chat.completions.parse(
-        model=settings.openai_chat_model,
+        model=model,
         messages=[
             {"role": "system", "content": _SYSTEM_PROMPT},
             {"role": "user", "content": normalized_text},
@@ -38,3 +88,28 @@ def extract_structured_profile(normalized_text: str) -> StructuredCandidateProfi
     if parsed is None:
         return StructuredCandidateProfile()
     return parsed
+
+
+def _extract_via_ollama(
+    normalized_text: str, base_url: str, model: str, timeout_seconds: int
+) -> StructuredCandidateProfile:
+    client = ollama.Client(host=base_url, timeout=timeout_seconds)
+    try:
+        response = client.chat(
+            model=model,
+            messages=[
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": normalized_text},
+            ],
+            format=StructuredCandidateProfile.model_json_schema(),
+            options={"temperature": 0},
+        )
+    except httpx.TimeoutException as exc:
+        raise OllamaTimeoutError(timeout_seconds) from exc
+    except Exception as exc:  # noqa: BLE001 - translate any connection/runtime error uniformly
+        raise OllamaUnavailableError(base_url, exc) from exc
+
+    content = response.message.content
+    if not content:
+        return StructuredCandidateProfile()
+    return StructuredCandidateProfile.model_validate_json(content)

@@ -71,6 +71,19 @@ def test_list_jobs_filters_by_status(api_client: TestClient, db_session: Session
     assert any(j["id"] == job.id for j in closed_response.json())
 
 
+def test_list_jobs_filters_by_title_keyword(api_client: TestClient, db_session: Session) -> None:
+    job = _seed_job(db_session)  # title: "Junior Software Engineer"
+
+    match_response = api_client.get("/jobs", params={"title": "junior"})
+    assert any(j["id"] == job.id for j in match_response.json())
+
+    case_insensitive_response = api_client.get("/jobs", params={"title": "JUNIOR"})
+    assert any(j["id"] == job.id for j in case_insensitive_response.json())
+
+    no_match_response = api_client.get("/jobs", params={"title": "senior"})
+    assert all(j["id"] != job.id for j in no_match_response.json())
+
+
 def test_crawl_now_endpoint_runs_due_sources(
     api_client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:

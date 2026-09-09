@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
@@ -37,8 +38,19 @@ async def upload_resume(
         )
 
     try:
-        profile = ingest_resume(
-            db, filename=file.filename, content=content, embedding_provider=embedding_provider
+        # ingest_resume is synchronous and can be slow (structured
+        # extraction may call a local LLM - potentially minutes on
+        # CPU-only hardware, though that step degrades gracefully rather
+        # than blocking the resume from being saved, see profile_service).
+        # Still run it off the event loop thread regardless, so a single
+        # upload can never freeze every other request on this server,
+        # including /health, while it's in flight.
+        profile = await run_in_threadpool(
+            ingest_resume,
+            db,
+            filename=file.filename,
+            content=content,
+            embedding_provider=embedding_provider,
         )
     except UnsupportedResumeFormatError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc

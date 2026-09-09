@@ -4,13 +4,14 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi import status as http_status
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.enums import JobStatus
 from app.models.job_posting import JobPosting
 from app.schemas.job import JobDetailRead, JobRead
+from app.services.jobs.location import NON_ISRAEL_LOCATION_HINTS
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -20,7 +21,9 @@ def list_jobs(
     company_id: int | None = None,
     career_source_id: int | None = None,
     status: JobStatus | None = None,
+    title: str | None = None,
     location: str | None = None,
+    israel_only: bool = True,
     discovered_since: datetime | None = None,
     published_since: datetime | None = None,
     limit: int = 100,
@@ -33,8 +36,24 @@ def list_jobs(
         query = query.where(JobPosting.career_source_id == career_source_id)
     if status is not None:
         query = query.where(JobPosting.status == status)
+    if title:
+        query = query.where(JobPosting.normalized_title.ilike(f"%{title.lower()}%"))
     if location:
         query = query.where(JobPosting.normalized_location.ilike(f"%{location.lower()}%"))
+    if israel_only:
+        # Exclude only locations confidently identified as elsewhere -
+        # a job whose location wasn't recognized at all stays visible
+        # rather than risk hiding a real Israeli listing. See
+        # app/services/jobs/location.py.
+        query = query.where(
+            and_(
+                *(
+                    JobPosting.normalized_location.is_(None)
+                    | ~JobPosting.normalized_location.ilike(f"%{hint}%")
+                    for hint in NON_ISRAEL_LOCATION_HINTS
+                )
+            )
+        )
     if discovered_since is not None:
         query = query.where(JobPosting.first_seen_at >= discovered_since)
     if published_since is not None:

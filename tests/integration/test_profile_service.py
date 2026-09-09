@@ -9,6 +9,11 @@ from sqlalchemy.orm import Session
 
 from app.schemas.candidate import StructuredCandidateProfile
 from app.services.candidate import profile_service
+from app.services.candidate.structured_profile import (
+    OllamaTimeoutError,
+    OllamaUnavailableError,
+    OpenAINotConfiguredError,
+)
 from tests.conftest import FakeEmbeddingProvider
 
 
@@ -124,3 +129,41 @@ def test_activate_profile_switches_active_flag(
 def test_activate_profile_raises_for_missing_id(db_session: Session) -> None:
     with pytest.raises(profile_service.ProfileNotFoundError):
         profile_service.activate_profile(db_session, 999_999)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        OllamaTimeoutError(timeout_seconds=120),
+        OllamaUnavailableError("http://localhost:11434", RuntimeError("refused")),
+        OpenAINotConfiguredError(),
+    ],
+)
+def test_ingest_resume_saves_successfully_when_structured_extraction_fails(
+    db_session: Session,
+    fake_embedding_provider: FakeEmbeddingProvider,
+    monkeypatch: pytest.MonkeyPatch,
+    error: Exception,
+) -> None:
+    """The resume itself (raw text + embedding) must never be lost just
+    because the LLM step is slow/unavailable - spec §6: matching must not
+    depend entirely on structured data. Observed for real on this dev
+    machine: CPU-only Ollama inference can take minutes to hours.
+    """
+
+    def _raise(text: str) -> StructuredCandidateProfile:
+        raise error
+
+    monkeypatch.setattr(profile_service, "extract_structured_profile", _raise)
+
+    profile = profile_service.ingest_resume(
+        db_session,
+        filename="cv.docx",
+        content=_docx_bytes("Jane Doe - Junior Software Engineer"),
+        embedding_provider=fake_embedding_provider,
+    )
+
+    assert profile.is_active is True
+    assert profile.structured_profile == StructuredCandidateProfile().model_dump()
+    assert "Jane Doe" in profile.raw_text
+    assert profile.embedding is not None

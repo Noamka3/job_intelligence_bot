@@ -36,11 +36,13 @@ def test_sync_endpoint_creates_companies(
 
     companies_response = api_client.get("/companies")
     assert companies_response.status_code == 200
-    assert any(c["name"] == "Acme" for c in companies_response.json())
+    acme = next(c for c in companies_response.json() if c["name"] == "Acme")
 
-    sources_response = api_client.get("/sources")
+    sources_response = api_client.get("/sources", params={"company_id": acme["id"]})
     assert sources_response.status_code == 200
-    assert sources_response.json()[0]["source_type"] == "greenhouse"
+    sources = sources_response.json()
+    assert len(sources) == 1
+    assert sources[0]["source_type"] == "greenhouse"
 
 
 def test_sync_endpoint_returns_502_on_sheet_read_failure(

@@ -76,6 +76,18 @@ class Settings(BaseSettings):
     embedding_dimensions: int = 384
 
     # --- LLM (structured CV extraction now; optional reranking from Phase 5) ---
+    # "ollama" (default): free, runs on this machine, no API key needed -
+    # needs `ollama serve` running and the model pulled once
+    # (`ollama pull llama3.2:3b`). "openai": needs OPENAI_API_KEY.
+    # ollama_timeout_seconds bounds worst case: CPU-only inference on
+    # underpowered/contended hardware can be extremely slow (minutes for
+    # even a short input, observed during development) - a timeout turns
+    # that into a fast, clear failure instead of hanging the request (and,
+    # were it not offloaded to a threadpool, the whole server) instead.
+    llm_provider: Literal["ollama", "openai"] = "ollama"
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_chat_model: str = "llama3.2:3b"
+    ollama_timeout_seconds: int = 120
     openai_chat_model: str = "gpt-5.4-mini"
 
     # --- Display / scheduling defaults ---
