@@ -6,15 +6,21 @@ CV and configurable target roles using hybrid (semantic + rule-based)
 scoring, and notifies via WhatsApp. See `docs/architecture.md` for the
 full design and `docs/job_sources.md` for verified ATS API formats.
 
-**Status: Phase 4 (job ingestion) complete and verified end-to-end**, on
-top of Phases 1-3. Real adapters for Greenhouse, Lever, Ashby, Comeet, and
-a basic JSON-LD parser discover jobs incrementally (new jobs get fetched/
-embedded, unchanged jobs are skipped cheaply, jobs missing for several
-consecutive crawls get closed rather than deleted). Verified live against
-two real companies from the sheet: `python -m app.cli crawl-now` pulled
-**30 real open roles from Torq (Greenhouse) and 19 from Tango (Comeet)**,
-all persisted with real embeddings - see `docs/job_sources.md` for the
-Comeet-specific findings from that verification.
+**Status: Phase 5 (hybrid matching) complete and verified end-to-end**, on
+top of Phases 1-4. All 240 real companies from the sheet are imported;
+Greenhouse/Comeet/JSON-LD adapters discover jobs incrementally (new jobs
+get fetched/embedded, unchanged jobs skipped cheaply, missing jobs closed
+after several consecutive crawls, never deleted). The matching engine
+(`app/services/matching/`) combines semantic similarity, skill matching,
+title/role matching, seniority detection, location, and recency into one
+0-100 score with human-readable reasons/concerns - verified against a
+real uploaded CV + a real "Junior Software Engineer" target role scored
+against all 170 real discovered jobs (`python -m app.cli score-all`,
+`GET /matches/top`). See `docs/matching.md` for the design, including a
+real empirical finding: the default weights had to be rebalanced well
+away from the spec's suggested starting point, because raw semantic
+similarity barely distinguishes "Junior" from "Senior" versions of the
+same role.
 
 Embeddings default to a **free local model** (`EMBEDDING_PROVIDER=local`,
 see `app/services/embeddings/local_provider.py`) - no API key needed for
@@ -36,7 +42,9 @@ reliable for this one feature.
 Israel-only job filtering (`GET /jobs` defaults to `israel_only=true`) is
 in per user request - see `app/services/jobs/location.py`.
 
-No matching/ranking yet (Phase 5).
+No automatic scheduling (Phase 6) or WhatsApp notifications (Phase 7)
+yet - matching currently has to be triggered explicitly
+(`score-all`/`GET /matches/top`), not run automatically after each crawl.
 
 ## Prerequisites
 
@@ -248,6 +256,32 @@ the request - fine for a handful of sources during development, but it
 will be slow with many. Phase 6 replaces the "runs on a timer" part with
 Celery Beat dispatching to a worker instead of blocking one HTTP call.
 
+## API (Phase 5)
+
+```bash
+# Score every ACTIVE job against the active CV + every enabled target role
+.venv/Scripts/python.exe -m app.cli score-all
+
+# Top matches for the active candidate profile, best first
+curl "http://127.0.0.1:8000/matches/top?limit=20"
+curl "http://127.0.0.1:8000/matches/top?min_score=70"
+
+# Leave feedback on a job (spec §29 - collected for future ranking tuning,
+# no learning happens on it yet)
+curl -X POST http://127.0.0.1:8000/jobs/1/feedback \
+  -H "Content-Type: application/json" -d '{"action": "interested"}'
+```
+
+Matching isn't wired into the crawl pipeline yet - run `score-all` after
+crawling/uploading a new CV to refresh `JobMatch` rows. See
+`docs/matching.md` for how the seven component scores combine, and why
+the weights differ from the spec's suggested starting point. Known
+limitation found during live testing: a job in a clearly different field
+(e.g. "Junior Customer Support") can still rank surprisingly high purely
+from a matching seniority signal + a couple of generic skill overlaps
+(SQL, testing, ...) - tightening a `TargetRole`'s `negative_keywords` is
+the intended lever for this, not something the scorer should special-case.
+
 ## CLI
 
 ```bash
@@ -256,6 +290,7 @@ Celery Beat dispatching to a worker instead of blocking one HTTP call.
 .venv/Scripts/python.exe -m app.cli import-excel "C:\path\to\companies.xlsx"
 .venv/Scripts/python.exe -m app.cli crawl-now
 .venv/Scripts/python.exe -m app.cli crawl-company "Torq"
+.venv/Scripts/python.exe -m app.cli score-all
 ```
 
 `rebuild-profile` re-runs structured extraction + embedding for the active
@@ -267,5 +302,6 @@ in column A, URL in column B) - no Google credentials needed, useful
 before setting those up or for a one-off import. `crawl-now` crawls every
 due `CareerSource`; `crawl-company` crawls just one company's sources, by
 name - useful for testing a single adapter without waiting on a full
-sync. More commands (`score-all`, `send-digest`, ...) are added alongside
-the phase that makes them real.
+sync. `score-all` scores every `ACTIVE` job against the active CV and
+every enabled target role (see API (Phase 5) above). More commands
+(`send-digest`, ...) are added alongside the phase that makes them real.

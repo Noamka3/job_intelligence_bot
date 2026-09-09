@@ -17,6 +17,7 @@ from app.services.candidate.profile_service import get_active_profile
 from app.services.candidate.structured_profile import extract_structured_profile
 from app.services.embeddings import get_embedding_provider
 from app.services.jobs.ingestion import crawl_source, get_due_sources
+from app.services.matching.runner import score_all_active_jobs
 from app.services.sheets.company_sync import (
     normalize_company_name,
     sync_companies_from_excel,
@@ -133,6 +134,21 @@ def crawl_company(name: str) -> None:
             )
         if not found:
             typer.echo(f"{company.name} has no enabled career sources.")
+
+
+@app.command("score-all")
+def score_all() -> None:
+    """Score every ACTIVE job against the active candidate profile and
+    every enabled target role, writing/updating JobMatch rows.
+    """
+    session_factory = get_session_factory()
+    with session_factory() as db:
+        if get_active_profile(db) is None:
+            typer.echo("No active candidate profile - upload a resume first.", err=True)
+            raise typer.Exit(code=1)
+
+        matches_written = score_all_active_jobs(db)
+        typer.echo(f"Wrote/updated {matches_written} match(es).")
 
 
 if __name__ == "__main__":

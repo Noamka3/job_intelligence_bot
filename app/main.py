@@ -6,6 +6,7 @@ from app.api.routes.candidate import router as candidate_router
 from app.api.routes.companies import router as companies_router
 from app.api.routes.health import router as health_router
 from app.api.routes.jobs import router as jobs_router
+from app.api.routes.matches import router as matches_router
 from app.api.routes.operations import router as operations_router
 from app.api.routes.sources import router as sources_router
 from app.api.routes.sync import router as sync_router
@@ -27,4 +28,5 @@ app.include_router(sync_router)
 app.include_router(companies_router)
 app.include_router(sources_router)
 app.include_router(jobs_router)
+app.include_router(matches_router)
 app.include_router(operations_router)

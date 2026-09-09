@@ -98,6 +98,31 @@ class Settings(BaseSettings):
     # --- Matching / notifications ---
     notification_score_threshold: int = Field(default=80, ge=0, le=100)
 
+    # Component weights for the final 0-100 match score. Must sum to 1.0 -
+    # enforced in app/services/matching/scoring.py, not here, so a bad
+    # .env value fails loudly at scoring time with a clear message rather
+    # than at Settings construction.
+    #
+    # Deliberately NOT spec §8's suggested starting point
+    # (30/20/20/10/10/5/5). Verified empirically against real embeddings
+    # (tests/integration/test_matching_scenarios.py, spec §43's own
+    # examples): the local embedding model's raw cosine similarity barely
+    # distinguishes "Junior Backend Engineer" from "Senior Backend
+    # Engineer" for the same tech stack (~0.43-0.54 for both) - exactly
+    # the failure mode spec §8 itself warns about. At 10% weight,
+    # seniority's correct, confident signal (1.0 vs 0.05) couldn't
+    # overcome that. Rebalanced toward the two components that reliably
+    # separate these cases (seniority detection, title/role keyword
+    # matching) and away from the two that don't discriminate on
+    # seniority at all (the semantic components) - see docs/matching.md.
+    weight_candidate_semantic: float = 0.20
+    weight_intent_semantic: float = 0.12
+    weight_skills: float = 0.20
+    weight_role: float = 0.15
+    weight_seniority: float = 0.28
+    weight_location: float = 0.03
+    weight_recency: float = 0.02
+
     # --- Twilio WhatsApp (Phase 7) ---
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
