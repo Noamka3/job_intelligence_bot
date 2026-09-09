@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from pathlib import Path
+
+import openpyxl
 import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -13,6 +16,9 @@ from app.services.sheets.reader import CompanySheetRow
 
 _RESOLUTIONS = {
     "https://job-boards.greenhouse.io/acme": ResolvedSource(CareerSourceType.GREENHOUSE, "acme"),
+    "https://job-boards.greenhouse.io/acme?offices%5B%5D=1": ResolvedSource(
+        CareerSourceType.GREENHOUSE, "acme"
+    ),
     "https://www.linkedin.com/in/some-recruiter/": ResolvedSource(
         CareerSourceType.UNSUPPORTED, None, "linkedin_not_scraped"
     ),
@@ -97,6 +103,43 @@ def test_resync_does_not_duplicate_companies_or_sources(
     assert len(companies) == 1
 
 
+def test_url_variant_of_same_board_does_not_create_a_second_source(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A sheet edit that only changes a query string (tracking param,
+    office filter, ...) must not spawn a duplicate CareerSource for what
+    both resolve to the same board (same source_type + external_identifier)
+    - found for real on Torq/Tango during Phase 4 live verification: two
+    URL variants had created two sources, and each independently pulled
+    (and stored) the same real jobs, doubling them.
+    """
+    _mock_rows(
+        monkeypatch, [CompanySheetRow(name="Acme", url="https://job-boards.greenhouse.io/acme")]
+    )
+    company_sync.sync_companies_from_sheet(db_session)
+
+    _mock_rows(
+        monkeypatch,
+        [
+            CompanySheetRow(
+                name="Acme", url="https://job-boards.greenhouse.io/acme?offices%5B%5D=1"
+            )
+        ],
+    )
+    result = company_sync.sync_companies_from_sheet(db_session)
+
+    assert result.sources_created == 0
+    company = db_session.execute(
+        select(Company).where(Company.normalized_name == "acme")
+    ).scalar_one()
+    sources = list(
+        db_session.execute(
+            select(CareerSource).where(CareerSource.company_id == company.id)
+        ).scalars()
+    )
+    assert len(sources) == 1
+
+
 def test_company_missing_from_new_sync_is_disabled_not_deleted(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -170,3 +213,24 @@ def test_failed_sheet_read_touches_nothing(
         select(Company).where(Company.normalized_name == "acme")
     ).scalar_one()
     assert still_there.enabled is True
+
+
+def test_sync_from_excel_produces_the_same_result_shape_as_sheet_sync(
+    db_session: Session, tmp_path: Path
+) -> None:
+    path = tmp_path / "companies.xlsx"
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    assert sheet is not None
+    sheet.append(("Hiring Partners Elevation", None))
+    sheet.append(("Full Name", "Link", "Location"))
+    sheet.append(("Acme", "https://job-boards.greenhouse.io/acme"))
+    workbook.save(path)
+
+    result = company_sync.sync_companies_from_excel(db_session, path)
+
+    assert result.companies_created == 1
+    company = db_session.execute(
+        select(Company).where(Company.normalized_name == "acme")
+    ).scalar_one()
+    assert company.name == "Acme"

@@ -17,17 +17,41 @@ from app.services.candidate.profile_service import get_active_profile
 from app.services.candidate.structured_profile import extract_structured_profile
 from app.services.embeddings import get_embedding_provider
 from app.services.jobs.ingestion import crawl_source, get_due_sources
-from app.services.sheets.company_sync import normalize_company_name, sync_companies_from_sheet
+from app.services.sheets.company_sync import (
+    normalize_company_name,
+    sync_companies_from_excel,
+    sync_companies_from_sheet,
+)
 
 app = typer.Typer(help="Job Intelligence Bot operational CLI.")
 
 
 @app.command("sync-sheet")
 def sync_sheet() -> None:
-    """Sync companies + career sources from the configured Google Sheet."""
+    """Sync companies + career sources from the configured Google Sheet
+    (needs GOOGLE_APPLICATION_CREDENTIALS set up - see README). For a
+    local .xlsx export instead, use import-excel.
+    """
     session_factory = get_session_factory()
     with session_factory() as db:
         result = sync_companies_from_sheet(db)
+
+    typer.echo(
+        f"Seen: {result.companies_seen}, created: {result.companies_created}, "
+        f"updated: {result.companies_updated}, disabled: {result.companies_disabled}, "
+        f"sources created: {result.sources_created}"
+    )
+
+
+@app.command("import-excel")
+def import_excel(file_path: str) -> None:
+    """Sync companies + career sources from a local .xlsx export of the
+    company sheet - same upsert/disable logic as sync-sheet, no Google
+    credentials needed. Expects company name in column A, URL in column B.
+    """
+    session_factory = get_session_factory()
+    with session_factory() as db:
+        result = sync_companies_from_excel(db, file_path)
 
     typer.echo(
         f"Seen: {result.companies_seen}, created: {result.companies_created}, "

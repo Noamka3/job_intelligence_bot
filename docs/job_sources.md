@@ -34,6 +34,21 @@ No Lever or Ashby examples exist in the sheet today, but both adapters are
 still built (spec priority order + future-proofing for companies added
 later).
 
+## CareerSource dedup by identifier, not exact URL
+
+Found live during Phase 4 verification: the real sheet's Torq and Tango
+rows carry query-string variants (`?offices%5B%5D=...`,
+`?location=Tel%20Aviv`) of URLs that were already present from earlier
+manual testing. Matching `CareerSource` by exact `source_url` treated
+these as two different sources, and each independently crawled and stored
+the same real jobs - doubling them (Torq showed 60 stored jobs for a
+30-job board). Fixed in `company_sync._ensure_career_source`: when the
+resolver returns an `external_identifier` (true for every known ATS -
+Comeet's `company_uid`, Greenhouse's board token, ...), dedup matches on
+`(source_type, external_identifier)` instead of the URL string. Only
+falls back to exact-URL matching for `generic_html`/`jsonld`/`unsupported`
+sources, where there's no such identifier to key on.
+
 ## Why LinkedIn is never scraped
 
 LinkedIn's User Agreement (§8.2) explicitly prohibits automated

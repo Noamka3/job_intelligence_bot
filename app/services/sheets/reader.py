@@ -8,32 +8,14 @@ warning.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 
 from app.core.config import get_settings
 from app.services.sheets.client import get_sheets_service
+from app.services.sheets.row_parsing import CompanySheetRow, parse_company_rows
 
 logger = logging.getLogger(__name__)
 
-# Defensive only: this tab currently has no header row, but if one is ever
-# added, skip it rather than ingesting it as a fake "company".
-_HEADER_LABELS = {
-    "company name",
-    "company",
-    "companies",
-    "name",
-    "link",
-    "url",
-    "שם חברה",
-    "שם",
-    "קישור",
-}
-
-
-@dataclass(frozen=True)
-class CompanySheetRow:
-    name: str
-    url: str | None
+__all__ = ["CompanySheetRow", "SheetTabNotFoundError", "read_company_rows", "resolve_sheet_title"]
 
 
 class SheetTabNotFoundError(LookupError):
@@ -68,18 +50,7 @@ def read_company_rows() -> list[CompanySheetRow]:
         .execute()
     )
     raw_rows: list[list[str]] = result.get("values", [])
-
-    rows: list[CompanySheetRow] = []
-    for raw_row in raw_rows:
-        name = raw_row[0].strip() if len(raw_row) > 0 else ""
-        url = raw_row[1].strip() if len(raw_row) > 1 else ""
-
-        if not name and not url:
-            continue
-        if name.lower() in _HEADER_LABELS:
-            continue
-
-        rows.append(CompanySheetRow(name=name, url=url or None))
+    rows = parse_company_rows(raw_rows)
 
     logger.info(
         "read company rows from sheet", extra={"row_count": len(rows), "sheet_title": title}

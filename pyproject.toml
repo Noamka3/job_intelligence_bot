@@ -27,6 +27,7 @@ dependencies = [
     "tenacity>=9.0",
     "truststore>=0.9",
     "fastembed>=0.4",
+    "openpyxl>=3.1",
 ]
 
 [project.optional-dependencies]
@@ -35,6 +36,7 @@ dev = [
     "ruff>=0.7",
     "mypy>=1.13",
     "respx>=0.21",
+    "types-openpyxl>=3.1",
 ]
 
 [build-system]
@@ -72,6 +74,11 @@ ignore_errors = true
 # google-api-python-client's Resource objects are built dynamically at
 # runtime and ship no type stubs.
 module = ["googleapiclient.*", "google.oauth2.*", "google_auth_httplib2.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# onnxruntime's C-extension internals ship no stubs/py.typed marker.
+module = "onnxruntime.capi.*"
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

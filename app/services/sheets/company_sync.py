@@ -1,17 +1,25 @@
-"""Company sync orchestration: Google Sheet -> Company + CareerSource rows.
+"""Company sync orchestration: company rows (from the Google Sheet or a
+local file) -> Company + CareerSource rows.
 
 Spec §38 rules this must honor:
-- a failed sheet read aborts before touching the DB (never delete/disable
+- a failed read aborts before touching the DB (never delete/disable
   companies because of a transient read failure)
 - upsert by normalized name, don't duplicate
-- a company that disappears from a successfully-read sheet is disabled,
+- a company that disappears from a successfully-read source is disabled,
   never deleted (historical jobs/matches must stay intact)
+
+Two entrypoints share the same apply logic (sync_companies): the live
+Google Sheets sync (sync_companies_from_sheet) and a local .xlsx import
+(sync_companies_from_excel) - useful before a Google service account is
+set up, or for a one-off import. Both produce identical Company/
+CareerSource rows from the same CompanySheetRow shape.
 """
 
 from __future__ import annotations
 
 import logging
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -22,6 +30,7 @@ from app.models.career_source import CareerSource
 from app.models.company import Company
 from app.models.enums import CareerSourceType
 from app.schemas.sync import SheetSyncResult
+from app.services.sheets.excel_reader import read_company_rows_from_excel
 from app.services.sheets.reader import CompanySheetRow, read_company_rows
 
 logger = logging.getLogger(__name__)
@@ -52,7 +61,15 @@ def normalize_company_name(name: str) -> str:
 
 def sync_companies_from_sheet(db: Session) -> SheetSyncResult:
     rows = read_company_rows()  # raises on failure - nothing below runs if the read fails
+    return sync_companies(db, rows)
 
+
+def sync_companies_from_excel(db: Session, file_path: str | Path) -> SheetSyncResult:
+    rows = read_company_rows_from_excel(file_path)  # raises on failure, same guarantee
+    return sync_companies(db, rows)
+
+
+def sync_companies(db: Session, rows: list[CompanySheetRow]) -> SheetSyncResult:
     existing_by_name: dict[str, Company] = {
         company.normalized_name: company for company in db.execute(select(Company)).scalars()
     }
@@ -133,11 +150,23 @@ def _ensure_career_source(
     if not url:
         return 0
 
-    existing = db.execute(
-        select(CareerSource).where(
-            CareerSource.company_id == company.id, CareerSource.source_url == url
+    query = select(CareerSource).where(CareerSource.company_id == company.id)
+    if resolved.external_identifier is not None:
+        # The real unique key for a known ATS board is (source_type,
+        # external_identifier), not the exact URL string: the same board
+        # can appear under multiple URL variants (different query params,
+        # a tracking suffix, ...) across sheet edits. Matching on the
+        # identifier - discovered the hard way, see docs/job_sources.md -
+        # avoids creating a second CareerSource (and therefore duplicate
+        # jobs, once fully crawled) for what both resolve to one board.
+        query = query.where(
+            CareerSource.source_type == resolved.source_type,
+            CareerSource.external_identifier == resolved.external_identifier,
         )
-    ).scalar_one_or_none()
+    else:
+        query = query.where(CareerSource.source_url == url)
+
+    existing = db.execute(query).scalar_one_or_none()
     if existing is not None:
         return 0
 
