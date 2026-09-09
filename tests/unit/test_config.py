@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import pytest
+
 from app.core.config import Settings
 
 
 def test_settings_defaults_are_sane() -> None:
-    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    settings = Settings(_env_file=None)
     assert settings.embedding_dimensions == 1024
     assert settings.embedding_model == "text-embedding-3-large"
     assert settings.default_timezone == "Asia/Jerusalem"
@@ -12,7 +14,7 @@ def test_settings_defaults_are_sane() -> None:
     assert 0 <= settings.notification_score_threshold <= 100
 
 
-def test_settings_reads_env_override(monkeypatch) -> None:
+def test_settings_reads_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("NOTIFICATION_SCORE_THRESHOLD", "90")
-    settings = Settings(_env_file=None)  # type: ignore[call-arg]
+    settings = Settings(_env_file=None)
     assert settings.notification_score_threshold == 90

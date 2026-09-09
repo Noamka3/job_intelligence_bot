@@ -6,9 +6,11 @@ CV and configurable target roles using hybrid (semantic + rule-based)
 scoring, and notifies via WhatsApp. See `docs/architecture.md` for the
 full design and `docs/job_sources.md` for verified ATS API formats.
 
-**Status: Phase 1 (foundation) complete.** Schema, migrations, config,
-logging, and a working `/health` endpoint. No ingestion, matching, or
-notifications yet.
+**Status: Phase 2 (candidate/target-role system) complete**, on top of
+Phase 1 (foundation). You can upload a CV (PDF/DOCX) — it's parsed,
+structured, embedded, and persisted as the one active profile — and
+create target roles (e.g. "Junior Software Engineer") with their own
+embedding. No company/job ingestion or matching yet (Phases 3-5).
 
 ## Prerequisites
 
@@ -27,9 +29,8 @@ uv pip install -e ".[dev]" -p .venv/Scripts/python.exe   # or: pip install -e ".
 
 # 2. Copy env config
 cp .env.example .env
-# Edit .env with real values as later phases need them (OpenAI key,
-# Twilio credentials, Google service account path, ...). The defaults are
-# enough to run Phase 1.
+# Set OPENAI_API_KEY to use resume upload / target roles (Phase 2). Twilio
+# and Google Sheets credentials aren't needed until Phases 3/7.
 
 # 3. Start Postgres + Redis
 docker compose up -d postgres redis
@@ -72,6 +73,7 @@ rather than mocking the database.
 ```bash
 .venv/Scripts/python.exe -m ruff check .
 .venv/Scripts/python.exe -m mypy app
+.venv/Scripts/python.exe -m mypy tests
 ```
 
 ## Database migrations
@@ -105,10 +107,35 @@ inside Docker (Linux) containers, not directly on the Windows host -
 Postgres and Redis already run this way, so this is consistent rather than
 an extra step.
 
+## API (Phase 2)
+
+```bash
+# Upload a resume (becomes the active profile)
+curl -F "file=@/path/to/cv.pdf" http://127.0.0.1:8000/candidate/resume
+
+# See the active profile / all versions
+curl http://127.0.0.1:8000/candidate/active
+curl http://127.0.0.1:8000/candidate/profiles
+
+# Reactivate an older version
+curl -X POST http://127.0.0.1:8000/candidate/profiles/1/activate
+
+# Create a target role
+curl -X POST http://127.0.0.1:8000/target-roles \
+  -H "Content-Type: application/json" \
+  -d '{"canonical_name": "Junior Software Engineer", "aliases": ["Software Engineer I"], "positive_keywords": ["python", "rest api"]}'
+
+curl http://127.0.0.1:8000/target-roles
+```
+
 ## CLI
 
-Not created yet - the spec calls for a Typer CLI (`sync-sheet`,
-`crawl-now`, etc.), but every one of those commands belongs to a phase
-that hasn't been built yet, and an empty CLI with no working commands
-wouldn't do anything. It's added in Phase 3 alongside the first real
-command (`sync-sheet`).
+```bash
+.venv/Scripts/python.exe -m app.cli rebuild-profile
+```
+
+Re-runs structured extraction + embedding for the active CV in place
+(useful after tweaking the extraction prompt or switching embedding
+models), without re-uploading the file. More commands (`sync-sheet`,
+`crawl-now`, ...) are added alongside the phase that makes them real -
+an empty stub command wouldn't do anything, so it isn't added early.

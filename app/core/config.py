@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     embedding_model: str = "text-embedding-3-large"
     embedding_dimensions: int = 1024
 
+    # --- LLM (structured CV extraction now; optional reranking from Phase 5) ---
+    openai_chat_model: str = "gpt-5.4-mini"
+
     # --- Display / scheduling defaults ---
     default_timezone: str = "Asia/Jerusalem"
     default_poll_minutes: int = 5

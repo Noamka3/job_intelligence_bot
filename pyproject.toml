@@ -14,6 +14,11 @@ dependencies = [
     "psycopg[binary]>=3.2",
     "pgvector>=0.3.6",
     "redis>=5.2",
+    "openai>=1.55",
+    "pypdf>=5.1",
+    "python-docx>=1.1",
+    "typer>=0.13",
+    "python-multipart>=0.0.17",
 ]
 
 [project.optional-dependencies]
@@ -39,6 +44,12 @@ extend-exclude = ["alembic/versions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's DI system relies on calling Depends()/Query()/... as an
+# argument default - that's the intended pattern, not the mutable-default
+# bug B008 otherwise catches.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.Body"]
 
 [tool.mypy]
 python_version = "3.12"

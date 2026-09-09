@@ -10,11 +10,65 @@ from __future__ import annotations
 from collections.abc import Generator
 
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import event
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.db.session import get_engine
+from app.db.session import get_db, get_engine
+from app.main import app
+from app.models.constants import EMBEDDING_DIM
+from app.services.embeddings import get_embedding_provider
+
+
+class FakeEmbeddingProvider:
+    """A deterministic, free EmbeddingProvider for tests - no network calls.
+
+    Returns a fixed-length zero vector by default, or per-text overrides
+    (matched by substring) when a test needs embeddings to differ.
+    """
+
+    dimensions = EMBEDDING_DIM
+
+    def __init__(self, overrides: dict[str, list[float]] | None = None) -> None:
+        self.calls: list[str] = []
+        self._overrides = overrides or {}
+
+    def embed_one(self, text: str) -> list[float]:
+        self.calls.append(text)
+        for needle, vector in self._overrides.items():
+            if needle in text:
+                return vector
+        return [0.0] * self.dimensions
+
+    def embed_many(self, texts: list[str]) -> list[list[float]]:
+        return [self.embed_one(text) for text in texts]
+
+
+@pytest.fixture
+def fake_embedding_provider() -> FakeEmbeddingProvider:
+    return FakeEmbeddingProvider()
+
+
+@pytest.fixture
+def api_client(
+    db_session: Session, fake_embedding_provider: FakeEmbeddingProvider
+) -> Generator[TestClient, None, None]:
+    """A TestClient wired to the same transactional db_session (so test
+    assertions and API-side writes see the same data) and a fake, free
+    EmbeddingProvider - no real DB connections or OpenAI calls per test.
+    """
+
+    def _get_db_override() -> Generator[Session, None, None]:
+        yield db_session
+
+    app.dependency_overrides[get_db] = _get_db_override
+    app.dependency_overrides[get_embedding_provider] = lambda: fake_embedding_provider
+    try:
+        yield TestClient(app)
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        app.dependency_overrides.pop(get_embedding_provider, None)
 
 
 @pytest.fixture
