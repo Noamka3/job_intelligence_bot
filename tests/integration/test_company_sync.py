@@ -91,7 +91,9 @@ def test_resync_does_not_duplicate_companies_or_sources(
     assert second.companies_created == 0
     assert second.sources_created == 0
 
-    companies = list(db_session.execute(select(Company)).scalars())
+    companies = list(
+        db_session.execute(select(Company).where(Company.normalized_name == "acme")).scalars()
+    )
     assert len(companies) == 1
 
 
@@ -115,7 +117,11 @@ def test_company_missing_from_new_sync_is_disabled_not_deleted(
     result = company_sync.sync_companies_from_sheet(db_session)
 
     assert result.companies_disabled == 1
-    companies = list(db_session.execute(select(Company)).scalars())
+    companies = list(
+        db_session.execute(
+            select(Company).where(Company.normalized_name.in_(["acme", "some recruiter co"]))
+        ).scalars()
+    )
     assert len(companies) == 2  # still present, just disabled
     disabled = db_session.execute(
         select(Company).where(Company.normalized_name == "some recruiter co")

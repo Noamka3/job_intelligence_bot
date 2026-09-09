@@ -86,7 +86,11 @@ def test_crawl_source_creates_new_jobs(
     assert run.jobs_created == 1
     assert run.jobs_seen == 1
 
-    jobs = list(db_session.execute(select(JobPosting)).scalars())
+    jobs = list(
+        db_session.execute(
+            select(JobPosting).where(JobPosting.career_source_id == source.id)
+        ).scalars()
+    )
     assert len(jobs) == 1
     assert jobs[0].external_job_id == "1"
     assert jobs[0].status == JobStatus.ACTIVE
@@ -136,7 +140,9 @@ def test_crawl_source_updates_changed_job_and_reembeds(
 
     assert run2.jobs_updated == 1
     assert len(fake_embedding_provider.calls) == calls_after_first + 1
-    job = db_session.execute(select(JobPosting)).scalar_one()
+    job = db_session.execute(
+        select(JobPosting).where(JobPosting.career_source_id == source.id)
+    ).scalar_one()
     assert job.title == "Junior Engineer II"
 
 
@@ -154,13 +160,14 @@ def test_crawl_source_closes_job_after_missing_threshold(
     adapter.stubs = []  # job disappears from the listing from now on
     threshold = get_settings().job_missing_threshold
 
+    job_query = select(JobPosting).where(JobPosting.career_source_id == source.id)
     for iteration in range(threshold - 1):
         ingestion.crawl_source(db_session, source, fake_embedding_provider)
-        job = db_session.execute(select(JobPosting)).scalar_one()
+        job = db_session.execute(job_query).scalar_one()
         assert job.status == JobStatus.ACTIVE, f"closed too early on iteration {iteration}"
 
     ingestion.crawl_source(db_session, source, fake_embedding_provider)
-    job = db_session.execute(select(JobPosting)).scalar_one()
+    job = db_session.execute(job_query).scalar_one()
     assert job.status == JobStatus.CLOSED
 
 

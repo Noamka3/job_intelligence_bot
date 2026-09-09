@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.api.routes import operations
 from app.ingestion.adapters.base import JobDetails, JobStub
 from app.models.career_source import CareerSource
 from app.models.company import Company
@@ -99,6 +100,13 @@ def test_crawl_now_endpoint_runs_due_sources(
             )
 
     monkeypatch.setattr(ingestion, "get_adapter", lambda _: _FakeAdapter())
+    # Scope to just this test's source: the dev DB can have other real
+    # CareerSources that are also genuinely due by wall-clock time (e.g.
+    # from a manual crawl-now run earlier), and this test's _FakeAdapter
+    # must never be used against those - it would write bogus jobs onto
+    # real companies. get_due_sources itself is covered separately in
+    # tests/integration/test_ingestion.py.
+    monkeypatch.setattr(operations, "get_due_sources", lambda _db: [source])
 
     response = api_client.post("/operations/crawl-now")
 
@@ -107,5 +115,5 @@ def test_crawl_now_endpoint_runs_due_sources(
     assert body["sources_attempted"] == 1
     assert body["succeeded"] == 1
 
-    jobs_response = api_client.get("/jobs")
+    jobs_response = api_client.get("/jobs", params={"career_source_id": source.id})
     assert len(jobs_response.json()) == 1

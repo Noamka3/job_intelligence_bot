@@ -34,6 +34,7 @@ import truststore  # noqa: E402
 truststore.inject_into_ssl()
 
 from functools import lru_cache  # noqa: E402
+from typing import Literal  # noqa: E402
 
 from pydantic import Field  # noqa: E402
 from pydantic_settings import BaseSettings, SettingsConfigDict  # noqa: E402
@@ -63,9 +64,16 @@ class Settings(BaseSettings):
     google_application_credentials: str = "./secrets/google-service-account.json"
 
     # --- Embeddings ---
+    # "local" (default): free, runs on this machine via fastembed/ONNX, no
+    # API key needed. "openai": higher quality, costs a few cents/month at
+    # this project's volume, needs OPENAI_API_KEY. Swapping providers
+    # means re-embedding everything - the two are not numerically
+    # comparable even at the same dimension count.
+    embedding_provider: Literal["local", "openai"] = "local"
+    local_embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     openai_api_key: str = ""
     embedding_model: str = "text-embedding-3-large"
-    embedding_dimensions: int = 1024
+    embedding_dimensions: int = 384
 
     # --- LLM (structured CV extraction now; optional reranking from Phase 5) ---
     openai_chat_model: str = "gpt-5.4-mini"

@@ -6,4 +6,4 @@ column DDL: changing it means writing a new Alembic migration that
 recreates the vector columns, not just editing an env var.
 """
 
-EMBEDDING_DIM = 1024
+EMBEDDING_DIM = 384

@@ -6,24 +6,32 @@ CV and configurable target roles using hybrid (semantic + rule-based)
 scoring, and notifies via WhatsApp. See `docs/architecture.md` for the
 full design and `docs/job_sources.md` for verified ATS API formats.
 
-**Status: Phase 4 (job ingestion) complete**, on top of Phases 1-3. Real
-adapters for Greenhouse, Lever, Ashby, Comeet, and a basic JSON-LD parser
-discover jobs incrementally (new jobs get fetched/embedded, unchanged jobs
-are skipped cheaply, jobs missing for several consecutive crawls get
-closed rather than deleted). Comeet's adapter was verified live against
-real companies from the sheet during development - see
-`docs/job_sources.md`. **You will not see real job rows yet without an
-OpenAI API key** - job ingestion generates an embedding for every new/
-changed job, which requires `OPENAI_API_KEY` to be set for real (see
-Setup below); everything up to that step works without one. No matching/
-ranking yet (Phase 5).
+**Status: Phase 4 (job ingestion) complete and verified end-to-end**, on
+top of Phases 1-3. Real adapters for Greenhouse, Lever, Ashby, Comeet, and
+a basic JSON-LD parser discover jobs incrementally (new jobs get fetched/
+embedded, unchanged jobs are skipped cheaply, jobs missing for several
+consecutive crawls get closed rather than deleted). Verified live against
+two real companies from the sheet: `python -m app.cli crawl-now` pulled
+**30 real open roles from Torq (Greenhouse) and 19 from Tango (Comeet)**,
+all persisted with real embeddings - see `docs/job_sources.md` for the
+Comeet-specific findings from that verification.
+
+Embeddings default to a **free local model** (`EMBEDDING_PROVIDER=local`,
+see `app/services/embeddings/local_provider.py`) - no OpenAI key needed
+for job ingestion to work end-to-end. OpenAI is still used for one thing
+regardless: structured CV extraction on resume upload (Phase 2) - cheap
+(a few cents total), needs `OPENAI_API_KEY` only when you actually use
+that feature. No matching/ranking yet (Phase 5).
 
 ## Prerequisites
 
 - Python 3.12+
 - Docker Desktop
 - A Google Cloud service account with Sheets API read access (Phase 3)
-- An OpenAI API key (Phase 2+)
+- An OpenAI API key - **optional**: only needed for resume structured
+  extraction (Phase 2's `/candidate/resume` and `rebuild-profile`) and if
+  you switch `EMBEDDING_PROVIDER` to `openai`. Job ingestion (Phase 4)
+  works fully without one - it defaults to a free local embedding model.
 - A Twilio account with WhatsApp enabled (Phase 7)
 
 ## Setup
@@ -35,8 +43,10 @@ uv pip install -e ".[dev]" -p .venv/Scripts/python.exe   # or: pip install -e ".
 
 # 2. Copy env config
 cp .env.example .env
-# Set OPENAI_API_KEY to use resume upload / target roles (Phase 2).
-# Set GOOGLE_APPLICATION_CREDENTIALS to use the sheet sync (Phase 3, see
+# Defaults work as-is for job ingestion (Phase 4) - EMBEDDING_PROVIDER is
+# "local" (free, no key). Set OPENAI_API_KEY only if you want resume
+# upload (Phase 2) or switch EMBEDDING_PROVIDER to "openai". Set
+# GOOGLE_APPLICATION_CREDENTIALS to use the sheet sync (Phase 3, see
 # "Google Sheets setup" below). Twilio isn't needed until Phase 7.
 
 # 3. Start Postgres + Redis
@@ -44,6 +54,8 @@ docker compose up -d postgres redis
 
 # 4. Apply migrations
 .venv/Scripts/python.exe -m alembic upgrade head
+# First real embedding call downloads the local model (~220MB, one-time,
+# cached under ~/.cache/fastembed/ afterward).
 
 # 5. Run the API
 .venv/Scripts/python.exe -m uvicorn app.main:app --reload
@@ -112,6 +124,12 @@ rather than mocking the database.
 ```
 
 ## Troubleshooting
+
+**First embedding call fails with an ONNX `bad allocation` / model load
+error.** Seen once during development, right after the local model
+finished downloading - a retry immediately succeeded (looked like the
+antivirus scanning the freshly-written model file was holding a lock on
+it). If it happens, just re-run the same command.
 
 **`pip install` fails with `CERTIFICATE_VERIFY_FAILED`.** This machine's
 antivirus (Avast) does TLS inspection with its own root certificate, which

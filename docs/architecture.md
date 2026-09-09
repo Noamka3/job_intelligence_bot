@@ -46,7 +46,7 @@ timezone (default `Asia/Jerusalem`) happens only at the presentation layer
 ## Key interfaces (built where implementations genuinely vary)
 
 - `JobSourceAdapter` (Phase 4+): `can_handle` / `list_jobs` / `fetch_job` / `normalize`, producing `JobStub`/`JobDetails` DTOs. The rest of the system never knows whether a job came from Greenhouse, Lever, Workday, or generic HTML.
-- `EmbeddingProvider` (Phase 2+): default `OpenAIEmbeddingProvider` (`text-embedding-3-large`, `dimensions=1024`). Nothing outside this provider talks to the OpenAI SDK directly.
+- `EmbeddingProvider` (Phase 2+): default `LocalEmbeddingProvider` (fastembed/ONNX, `paraphrase-multilingual-MiniLM-L12-v2`, `dimensions=384`) - free, no API key, chosen over the spec's suggested OpenAI default at the user's request to avoid per-embedding cost. `OpenAIEmbeddingProvider` (`text-embedding-3-large`) remains available via `EMBEDDING_PROVIDER=openai`. Nothing outside these two providers talks to fastembed or the OpenAI SDK directly - see `app/services/embeddings/`.
 - `NotificationProvider` (Phase 7+): `ConsoleNotificationProvider`, `TwilioWhatsAppNotificationProvider`.
 - `LLMReranker` (optional, Phase 5+): only invoked for jobs whose preliminary score already clears a threshold.
 

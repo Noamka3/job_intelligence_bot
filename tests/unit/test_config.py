@@ -7,7 +7,8 @@ from app.core.config import Settings
 
 def test_settings_defaults_are_sane() -> None:
     settings = Settings(_env_file=None)
-    assert settings.embedding_dimensions == 1024
+    assert settings.embedding_provider == "local"
+    assert settings.embedding_dimensions == 384
     assert settings.embedding_model == "text-embedding-3-large"
     assert settings.default_timezone == "Asia/Jerusalem"
     assert settings.google_sheet_gid == 168609393
