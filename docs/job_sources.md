@@ -1,10 +1,19 @@
 # Job sources
 
-Adapters are implemented starting Phase 4. This document records the
-verified facts gathered during research so they don't need to be
-re-derived later, and the real distribution found in the current company
-spreadsheet (240 rows) so adapter priority is grounded in reality rather
-than guesswork.
+Phase 4 implemented adapters for Greenhouse, Lever, Ashby, Comeet, and a
+basic JSON-LD parser (`app/ingestion/adapters/`). This document records
+the verified facts gathered during research so they don't need to be
+re-derived later. Comeet's adapter was additionally verified against two
+real companies from the sheet with live HTTP requests during development
+(see below) - Greenhouse/Lever/Ashby/JSON-LD are verified against their
+public documentation and covered by respx-mocked tests, but have not yet
+been exercised against a real company's live board end-to-end (that needs
+an OpenAI API key to complete the embedding step - not yet configured).
+The company distribution below is the real breakdown from the current
+company spreadsheet (240 rows), which is why adapter priority here differs
+slightly from the spec's abstract ranking (Comeet, with ~10 real
+companies, was built alongside Greenhouse/Lever/Ashby rather than after
+JSON-LD as originally ranked).
 
 ## What's actually in the spreadsheet today
 
@@ -38,12 +47,36 @@ simply not crawled.
 ## Verified adapter API formats
 
 ### Comeet
-- `GET https://api.comeet.co/positions` or the older
-  `GET https://www.comeet.co/careers-api/2.0/company/{company_uid}/positions?token={token}&details=false`
-- Set `details=true` to include description/requirements text (excluded by default).
-- Response: JSON with `uid`, `name`, `status`, `department`, `employment_type`, `location`, URLs.
-- Use a 60s timeout — large boards can be slow to return.
-- No authentication required for public boards.
+
+**Verified live** against real companies from the sheet (Cymotive - 0 open
+roles right now; Tango - 19 real open roles, fetched and parsed
+successfully) during Phase 4 development. One important fact a generic
+search summary did not surface:
+
+- The positions API (`GET https://www.comeet.com/careers-api/2.0/company/{company_uid}/positions?token={token}&details=false`)
+  needs a `token` that is **not present anywhere in the public job board
+  URL**. It's embedded in a `var COMPANY_DATA = {...};` JS blob inside the
+  HTML of the public careers page (`https://www.comeet.com/jobs/{slug}/{company_uid}`).
+  `ComeetAdapter` fetches that page once per source and extracts
+  `company_uid` + `token` from `COMPANY_DATA` via regex + `json.loads` -
+  it does not trust the URL's slug segment for this (see
+  `app/ingestion/adapters/comeet.py`).
+- `company_uid` **does** match the URL's last path segment (e.g. `F1.008`
+  in `/jobs/cymotive/F1.008`) - confirmed by comparing the URL against the
+  `company_uid` found in `COMPANY_DATA` for two different companies.
+- List call (`details=false`): each item has `uid`, `name`, `department`,
+  `location` (`name`, `country`, `city`, `is_remote`), `employment_type`
+  (free text like `"Full-time"`), `experience_level` (free text like
+  `"Senior"` - a real seniority signal Comeet provides directly, not yet
+  used by this project; Phase 5's seniority detection is title/requirements
+  based per spec §9 rather than trusting each ATS's own inconsistent
+  labels, but this is worth revisiting), `time_updated` (ISO-8601),
+  `url_active_page`.
+- Detail call (`details=true`) adds a `details` array of
+  `{"name": "Description"|"Responsibilities"|"Requirements"|..., "value": "<html>"}`
+  objects - Comeet already segments the job text into the sections spec
+  §11 asks for, unlike most other ATSes which return one HTML blob.
+- No authentication beyond the token; no published rate limit encountered.
 
 ### Greenhouse
 - `GET https://boards-api.greenhouse.io/v1/boards/{board_token}/jobs` (list), `.../jobs/{job_id}` (single).

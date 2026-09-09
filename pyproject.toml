@@ -22,6 +22,10 @@ dependencies = [
     "httpx>=0.27",
     "google-api-python-client>=2.150",
     "google-auth>=2.35",
+    "beautifulsoup4>=4.12",
+    "lxml>=5.3",
+    "tenacity>=9.0",
+    "truststore>=0.9",
 ]
 
 [project.optional-dependencies]

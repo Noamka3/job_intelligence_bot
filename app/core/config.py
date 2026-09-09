@@ -22,6 +22,17 @@ import os
 # place that reliably runs before the first SSL context is created.
 os.environ.pop("SSLKEYLOGFILE", None)
 
+# Separately: Avast also installs its own root CA into the Windows
+# certificate store to inspect HTTPS traffic. That root isn't in the
+# plain `certifi` bundle ssl/httpx use by default, so every outbound
+# HTTPS request (career pages, Google Sheets, OpenAI) fails with
+# CERTIFICATE_VERIFY_FAILED. truststore delegates certificate
+# verification to the OS trust store instead (the same fix `uv` already
+# uses here via UV_SYSTEM_CERTS) - harmless, and correct, on any machine.
+import truststore  # noqa: E402
+
+truststore.inject_into_ssl()
+
 from functools import lru_cache  # noqa: E402
 
 from pydantic import Field  # noqa: E402

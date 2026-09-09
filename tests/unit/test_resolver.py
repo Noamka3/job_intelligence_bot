@@ -29,7 +29,7 @@ def test_linkedin_is_never_scraped() -> None:
 
 def test_known_ats_hostnames_classify_without_network_call() -> None:
     cases = {
-        "https://www.comeet.com/jobs/acme/F1.008": (CareerSourceType.COMEET, "acme"),
+        "https://www.comeet.com/jobs/acme/F1.008": (CareerSourceType.COMEET, "F1.008"),
         "https://job-boards.greenhouse.io/torq": (CareerSourceType.GREENHOUSE, "torq"),
         "https://jobs.lever.co/acme": (CareerSourceType.LEVER, "acme"),
         "https://jobs.ashbyhq.com/acme": (CareerSourceType.ASHBY, "acme"),

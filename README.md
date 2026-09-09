@@ -6,13 +6,17 @@ CV and configurable target roles using hybrid (semantic + rule-based)
 scoring, and notifies via WhatsApp. See `docs/architecture.md` for the
 full design and `docs/job_sources.md` for verified ATS API formats.
 
-**Status: Phase 3 (company ingestion) complete**, on top of Phases 1-2.
-Companies sync from the Google Sheet, each one gets a `CareerSource`
-automatically classified by ATS type (Comeet/Greenhouse/Lever/Ashby/
-Workday/Taleo/JSON-LD/generic HTML), LinkedIn and broken URLs are recorded
-as unsupported rather than dropped, and companies that disappear from the
-sheet are disabled (never deleted). No job ingestion or matching yet
-(Phases 4-5).
+**Status: Phase 4 (job ingestion) complete**, on top of Phases 1-3. Real
+adapters for Greenhouse, Lever, Ashby, Comeet, and a basic JSON-LD parser
+discover jobs incrementally (new jobs get fetched/embedded, unchanged jobs
+are skipped cheaply, jobs missing for several consecutive crawls get
+closed rather than deleted). Comeet's adapter was verified live against
+real companies from the sheet during development - see
+`docs/job_sources.md`. **You will not see real job rows yet without an
+OpenAI API key** - job ingestion generates an embedding for every new/
+changed job, which requires `OPENAI_API_KEY` to be set for real (see
+Setup below); everything up to that step works without one. No matching/
+ranking yet (Phase 5).
 
 ## Prerequisites
 
@@ -172,16 +176,37 @@ curl "http://127.0.0.1:8000/companies?enabled=true"
 curl "http://127.0.0.1:8000/sources?source_type=comeet"
 ```
 
+## API (Phase 4)
+
+```bash
+# Crawl every due CareerSource now (blocks until done - see caveat below)
+curl -X POST http://127.0.0.1:8000/operations/crawl-now
+
+# List / inspect discovered jobs
+curl http://127.0.0.1:8000/jobs
+curl "http://127.0.0.1:8000/jobs?status=active&company_id=1"
+curl http://127.0.0.1:8000/jobs/1
+```
+
+`POST /operations/crawl-now` runs every due source synchronously inside
+the request - fine for a handful of sources during development, but it
+will be slow with many. Phase 6 replaces the "runs on a timer" part with
+Celery Beat dispatching to a worker instead of blocking one HTTP call.
+
 ## CLI
 
 ```bash
 .venv/Scripts/python.exe -m app.cli rebuild-profile
 .venv/Scripts/python.exe -m app.cli sync-sheet
+.venv/Scripts/python.exe -m app.cli crawl-now
+.venv/Scripts/python.exe -m app.cli crawl-company "Torq"
 ```
 
 `rebuild-profile` re-runs structured extraction + embedding for the active
 CV in place (useful after tweaking the extraction prompt or switching
 embedding models), without re-uploading the file. `sync-sheet` runs the
-same company sync as `POST /sync/google-sheet`. More commands
-(`crawl-now`, ...) are added alongside the phase that makes them real - an
-empty stub command wouldn't do anything, so it isn't added early.
+same company sync as `POST /sync/google-sheet`. `crawl-now` crawls every
+due `CareerSource`; `crawl-company` crawls just one company's sources, by
+name - useful for testing a single adapter without waiting on a full
+sync. More commands (`score-all`, `send-digest`, ...) are added alongside
+the phase that makes them real.

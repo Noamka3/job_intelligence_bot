@@ -1,0 +1,231 @@
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+
+import pytest
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.core.config import get_settings
+from app.core.timezone import utc_now
+from app.ingestion.adapters.base import JobDetails, JobStub
+from app.models.career_source import CareerSource
+from app.models.company import Company
+from app.models.enums import CareerSourceType, CrawlRunStatus, JobStatus
+from app.models.job_posting import JobPosting
+from app.services.jobs import ingestion
+from tests.conftest import FakeEmbeddingProvider
+
+
+class _FakeAdapter:
+    def __init__(
+        self,
+        stubs: list[JobStub],
+        details_by_id: dict[str, JobDetails] | None = None,
+        raise_on_list: Exception | None = None,
+    ) -> None:
+        self.stubs = stubs
+        self.details_by_id = details_by_id or {}
+        self.raise_on_list = raise_on_list
+        self.fetch_calls: list[str] = []
+
+    def list_jobs(self, source: CareerSource) -> list[JobStub]:
+        if self.raise_on_list is not None:
+            raise self.raise_on_list
+        return self.stubs
+
+    def fetch_job(self, source: CareerSource, stub: JobStub) -> JobDetails:
+        self.fetch_calls.append(stub.external_job_id)
+        return self.details_by_id[stub.external_job_id]
+
+
+def _make_source(db: Session) -> CareerSource:
+    company = Company(name="Acme", normalized_name="acme")
+    db.add(company)
+    db.flush()
+    source = CareerSource(
+        company_id=company.id,
+        source_type=CareerSourceType.GREENHOUSE,
+        source_url="https://job-boards.greenhouse.io/acme",
+        external_identifier="acme",
+        poll_interval_minutes=5,
+    )
+    db.add(source)
+    db.flush()
+    return source
+
+
+def _details(
+    job_id: str, title: str = "Junior Engineer", updated_at: datetime | None = None
+) -> JobDetails:
+    # Every real adapter's fetch_job populates source_updated_at from its
+    # own detail response (see e.g. greenhouse.py's _to_details) - a fake
+    # missing it would make _is_definitely_unchanged never trust the cheap
+    # stub comparison, which isn't representative of real adapter output.
+    return JobDetails(
+        external_job_id=job_id,
+        title=title,
+        source_url=f"https://job-boards.greenhouse.io/acme/jobs/{job_id}",
+        source_updated_at=updated_at,
+    )
+
+
+def test_crawl_source_creates_new_jobs(
+    db_session: Session,
+    fake_embedding_provider: FakeEmbeddingProvider,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _make_source(db_session)
+    stub = JobStub(external_job_id="1", title="Junior Engineer", source_url=source.source_url)
+    adapter = _FakeAdapter([stub], {"1": _details("1")})
+    monkeypatch.setattr(ingestion, "get_adapter", lambda _: adapter)
+
+    run = ingestion.crawl_source(db_session, source, fake_embedding_provider)
+
+    assert run.status == CrawlRunStatus.SUCCESS
+    assert run.jobs_created == 1
+    assert run.jobs_seen == 1
+
+    jobs = list(db_session.execute(select(JobPosting)).scalars())
+    assert len(jobs) == 1
+    assert jobs[0].external_job_id == "1"
+    assert jobs[0].status == JobStatus.ACTIVE
+    assert jobs[0].embedding is not None
+
+
+def test_crawl_source_skips_unchanged_job_without_refetching(
+    db_session: Session,
+    fake_embedding_provider: FakeEmbeddingProvider,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _make_source(db_session)
+    updated_at = datetime(2024, 1, 1, tzinfo=UTC)
+    stub = JobStub(
+        external_job_id="1",
+        title="Junior Engineer",
+        source_url=source.source_url,
+        source_updated_at=updated_at,
+    )
+    adapter = _FakeAdapter([stub], {"1": _details("1", updated_at=updated_at)})
+    monkeypatch.setattr(ingestion, "get_adapter", lambda _: adapter)
+
+    ingestion.crawl_source(db_session, source, fake_embedding_provider)
+    assert adapter.fetch_calls == ["1"]
+
+    run2 = ingestion.crawl_source(db_session, source, fake_embedding_provider)
+
+    assert run2.jobs_created == 0
+    assert run2.jobs_updated == 0
+    assert adapter.fetch_calls == ["1"]  # no second fetch_job call
+
+
+def test_crawl_source_updates_changed_job_and_reembeds(
+    db_session: Session,
+    fake_embedding_provider: FakeEmbeddingProvider,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _make_source(db_session)
+    stub = JobStub(external_job_id="1", title="Junior Engineer", source_url=source.source_url)
+    adapter = _FakeAdapter([stub], {"1": _details("1")})
+    monkeypatch.setattr(ingestion, "get_adapter", lambda _: adapter)
+    ingestion.crawl_source(db_session, source, fake_embedding_provider)
+    calls_after_first = len(fake_embedding_provider.calls)
+
+    adapter.details_by_id["1"] = _details("1", title="Junior Engineer II")
+    run2 = ingestion.crawl_source(db_session, source, fake_embedding_provider)
+
+    assert run2.jobs_updated == 1
+    assert len(fake_embedding_provider.calls) == calls_after_first + 1
+    job = db_session.execute(select(JobPosting)).scalar_one()
+    assert job.title == "Junior Engineer II"
+
+
+def test_crawl_source_closes_job_after_missing_threshold(
+    db_session: Session,
+    fake_embedding_provider: FakeEmbeddingProvider,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _make_source(db_session)
+    stub = JobStub(external_job_id="1", title="Junior Engineer", source_url=source.source_url)
+    adapter = _FakeAdapter([stub], {"1": _details("1")})
+    monkeypatch.setattr(ingestion, "get_adapter", lambda _: adapter)
+    ingestion.crawl_source(db_session, source, fake_embedding_provider)
+
+    adapter.stubs = []  # job disappears from the listing from now on
+    threshold = get_settings().job_missing_threshold
+
+    for iteration in range(threshold - 1):
+        ingestion.crawl_source(db_session, source, fake_embedding_provider)
+        job = db_session.execute(select(JobPosting)).scalar_one()
+        assert job.status == JobStatus.ACTIVE, f"closed too early on iteration {iteration}"
+
+    ingestion.crawl_source(db_session, source, fake_embedding_provider)
+    job = db_session.execute(select(JobPosting)).scalar_one()
+    assert job.status == JobStatus.CLOSED
+
+
+def test_crawl_source_isolates_adapter_failure(
+    db_session: Session,
+    fake_embedding_provider: FakeEmbeddingProvider,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _make_source(db_session)
+    adapter = _FakeAdapter([], raise_on_list=RuntimeError("board unreachable"))
+    monkeypatch.setattr(ingestion, "get_adapter", lambda _: adapter)
+
+    run = ingestion.crawl_source(db_session, source, fake_embedding_provider)
+
+    assert run.status == CrawlRunStatus.FAILED
+    assert run.error_type == "RuntimeError"
+    assert source.consecutive_failures == 1
+    assert source.next_check_at is not None
+
+
+def test_crawl_source_with_no_registered_adapter_fails_cleanly(
+    db_session: Session,
+    fake_embedding_provider: FakeEmbeddingProvider,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _make_source(db_session)
+    monkeypatch.setattr(ingestion, "get_adapter", lambda _: None)
+
+    run = ingestion.crawl_source(db_session, source, fake_embedding_provider)
+
+    assert run.status == CrawlRunStatus.FAILED
+    assert run.error_type == "NoAdapter"
+
+
+def test_get_due_sources_only_returns_enabled_and_due(db_session: Session) -> None:
+    company = Company(name="Acme", normalized_name="acme")
+    db_session.add(company)
+    db_session.flush()
+
+    due = CareerSource(
+        company_id=company.id,
+        source_type=CareerSourceType.GREENHOUSE,
+        source_url="https://a",
+        enabled=True,
+        next_check_at=None,
+    )
+    not_due = CareerSource(
+        company_id=company.id,
+        source_type=CareerSourceType.GREENHOUSE,
+        source_url="https://b",
+        enabled=True,
+        next_check_at=utc_now() + timedelta(hours=1),
+    )
+    disabled = CareerSource(
+        company_id=company.id,
+        source_type=CareerSourceType.GREENHOUSE,
+        source_url="https://c",
+        enabled=False,
+        next_check_at=None,
+    )
+    db_session.add_all([due, not_due, disabled])
+    db_session.commit()
+
+    result = ingestion.get_due_sources(db_session)
+
+    assert due in result
+    assert not_due not in result
+    assert disabled not in result
