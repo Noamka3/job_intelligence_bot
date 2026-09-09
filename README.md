@@ -6,11 +6,13 @@ CV and configurable target roles using hybrid (semantic + rule-based)
 scoring, and notifies via WhatsApp. See `docs/architecture.md` for the
 full design and `docs/job_sources.md` for verified ATS API formats.
 
-**Status: Phase 2 (candidate/target-role system) complete**, on top of
-Phase 1 (foundation). You can upload a CV (PDF/DOCX) — it's parsed,
-structured, embedded, and persisted as the one active profile — and
-create target roles (e.g. "Junior Software Engineer") with their own
-embedding. No company/job ingestion or matching yet (Phases 3-5).
+**Status: Phase 3 (company ingestion) complete**, on top of Phases 1-2.
+Companies sync from the Google Sheet, each one gets a `CareerSource`
+automatically classified by ATS type (Comeet/Greenhouse/Lever/Ashby/
+Workday/Taleo/JSON-LD/generic HTML), LinkedIn and broken URLs are recorded
+as unsupported rather than dropped, and companies that disappear from the
+sheet are disabled (never deleted). No job ingestion or matching yet
+(Phases 4-5).
 
 ## Prerequisites
 
@@ -29,8 +31,9 @@ uv pip install -e ".[dev]" -p .venv/Scripts/python.exe   # or: pip install -e ".
 
 # 2. Copy env config
 cp .env.example .env
-# Set OPENAI_API_KEY to use resume upload / target roles (Phase 2). Twilio
-# and Google Sheets credentials aren't needed until Phases 3/7.
+# Set OPENAI_API_KEY to use resume upload / target roles (Phase 2).
+# Set GOOGLE_APPLICATION_CREDENTIALS to use the sheet sync (Phase 3, see
+# "Google Sheets setup" below). Twilio isn't needed until Phase 7.
 
 # 3. Start Postgres + Redis
 docker compose up -d postgres redis
@@ -57,6 +60,23 @@ ports in `docker-compose.yml` and `.env`.
 Point your editor's Python interpreter at `.venv/Scripts/python.exe` (or
 run `uv sync` equivalent) so import resolution and type checking work
 in-editor, not just from the CLI.
+
+### Google Sheets setup (Phase 3)
+
+The company sync reads `GOOGLE_SHEET_ID` + `GOOGLE_SHEET_GID` (already
+defaulted to the real sheet in `.env.example`) via a Google service
+account - never your own Google login.
+
+1. In Google Cloud Console, create (or reuse) a project and enable the
+   **Google Sheets API**.
+2. Create a **Service Account** (IAM & Admin -> Service Accounts), then
+   create a JSON key for it and download it.
+3. Save that file somewhere outside the repo (e.g. `./secrets/google-service-account.json`
+   - already gitignored) and point `GOOGLE_APPLICATION_CREDENTIALS` at it in `.env`.
+4. **Share the actual Google Sheet** with the service account's
+   `client_email` (found inside the JSON key file) - Viewer access is
+   enough. Without this step every sync call fails with a permissions
+   error, since the service account has no access of its own.
 
 ## Running tests
 
@@ -107,6 +127,18 @@ inside Docker (Linux) containers, not directly on the Windows host -
 Postgres and Redis already run this way, so this is consistent rather than
 an extra step.
 
+**Any real HTTPS call crashes the process with `OPENSSL_Uplink(...): no
+OPENSSL_Applink`** (e.g. running tests that hit `httpx`, or the Google
+Sheets sync). This machine's antivirus (Avast) sets the environment
+variable `SSLKEYLOGFILE` to one of its own internal named pipes
+(`\\.\aswMonFltProxy\...`) for TLS inspection; Python's `ssl` module
+crashes trying to open that path whenever it creates an SSL context. This
+is already worked around in `app/core/config.py` (which unsets the
+variable before anything else in the process can create an SSL context) -
+if you ever see this crash again, something is importing before
+`app.core.config`, or a *new* entrypoint (e.g. a fresh script run directly)
+needs the same fix.
+
 ## API (Phase 2)
 
 ```bash
@@ -128,14 +160,28 @@ curl -X POST http://127.0.0.1:8000/target-roles \
 curl http://127.0.0.1:8000/target-roles
 ```
 
+## API (Phase 3)
+
+```bash
+# Sync companies + career sources from the configured Google Sheet
+curl -X POST http://127.0.0.1:8000/sync/google-sheet
+
+# List companies / sources (optionally filtered)
+curl http://127.0.0.1:8000/companies
+curl "http://127.0.0.1:8000/companies?enabled=true"
+curl "http://127.0.0.1:8000/sources?source_type=comeet"
+```
+
 ## CLI
 
 ```bash
 .venv/Scripts/python.exe -m app.cli rebuild-profile
+.venv/Scripts/python.exe -m app.cli sync-sheet
 ```
 
-Re-runs structured extraction + embedding for the active CV in place
-(useful after tweaking the extraction prompt or switching embedding
-models), without re-uploading the file. More commands (`sync-sheet`,
-`crawl-now`, ...) are added alongside the phase that makes them real -
-an empty stub command wouldn't do anything, so it isn't added early.
+`rebuild-profile` re-runs structured extraction + embedding for the active
+CV in place (useful after tweaking the extraction prompt or switching
+embedding models), without re-uploading the file. `sync-sheet` runs the
+same company sync as `POST /sync/google-sheet`. More commands
+(`crawl-now`, ...) are added alongside the phase that makes them real - an
+empty stub command wouldn't do anything, so it isn't added early.

@@ -7,10 +7,25 @@ calling os.getenv directly, so all configuration stays discoverable here.
 
 from __future__ import annotations
 
-from functools import lru_cache
+import os
 
-from pydantic import Field
-from pydantic_settings import BaseSettings, SettingsConfigDict
+# On this machine, Avast's TLS-inspection hook sets SSLKEYLOGFILE to an
+# internal named pipe (\\.\aswMonFltProxy\...). Python's ssl module tries
+# to open that path when creating any SSL context (ssl.create_default_
+# context(), used by httpx/google-auth/openai for every real HTTPS
+# request) and crashes the whole process with "OPENSSL_Uplink ... no
+# OPENSSL_Applink" - not a bug in this app. Unsetting it here, before
+# anything else in the process can create an SSL context, fixes it; this
+# is a no-op on any machine where the variable isn't set to begin with.
+# This module is imported first by every entrypoint (models, services,
+# main.py, cli.py, alembic/env.py, tests/conftest.py), so this is the one
+# place that reliably runs before the first SSL context is created.
+os.environ.pop("SSLKEYLOGFILE", None)
+
+from functools import lru_cache  # noqa: E402
+
+from pydantic import Field  # noqa: E402
+from pydantic_settings import BaseSettings, SettingsConfigDict  # noqa: E402
 
 
 class Settings(BaseSettings):

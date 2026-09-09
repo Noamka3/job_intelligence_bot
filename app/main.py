@@ -3,7 +3,10 @@ from __future__ import annotations
 from fastapi import FastAPI
 
 from app.api.routes.candidate import router as candidate_router
+from app.api.routes.companies import router as companies_router
 from app.api.routes.health import router as health_router
+from app.api.routes.sources import router as sources_router
+from app.api.routes.sync import router as sync_router
 from app.api.routes.target_roles import router as target_roles_router
 from app.core.logging import configure_logging
 
@@ -18,3 +21,6 @@ app = FastAPI(
 app.include_router(health_router)
 app.include_router(candidate_router)
 app.include_router(target_roles_router)
+app.include_router(sync_router)
+app.include_router(companies_router)
+app.include_router(sources_router)

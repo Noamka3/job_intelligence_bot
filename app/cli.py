@@ -13,8 +13,23 @@ from app.services.candidate.normalization import normalize_text
 from app.services.candidate.profile_service import get_active_profile
 from app.services.candidate.structured_profile import extract_structured_profile
 from app.services.embeddings import get_embedding_provider
+from app.services.sheets.company_sync import sync_companies_from_sheet
 
 app = typer.Typer(help="Job Intelligence Bot operational CLI.")
+
+
+@app.command("sync-sheet")
+def sync_sheet() -> None:
+    """Sync companies + career sources from the configured Google Sheet."""
+    session_factory = get_session_factory()
+    with session_factory() as db:
+        result = sync_companies_from_sheet(db)
+
+    typer.echo(
+        f"Seen: {result.companies_seen}, created: {result.companies_created}, "
+        f"updated: {result.companies_updated}, disabled: {result.companies_disabled}, "
+        f"sources created: {result.sources_created}"
+    )
 
 
 @app.command("rebuild-profile")
