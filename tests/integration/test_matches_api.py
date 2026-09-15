@@ -12,9 +12,10 @@ from app.models.enums import CareerSourceType, JobStatus
 from app.models.job_match import JobMatch
 from app.models.job_posting import JobPosting
 from app.models.target_role import TargetRole
+from app.services.jobs.location import classify_country
 
 
-def _seed(db_session: Session) -> tuple[JobPosting, JobPosting]:
+def _seed(db_session: Session) -> tuple[JobPosting, JobPosting, JobPosting]:
     candidate = CandidateProfile(
         version=1,
         filename="cv.pdf",
@@ -37,13 +38,19 @@ def _seed(db_session: Session) -> tuple[JobPosting, JobPosting]:
     db_session.flush()
 
     jobs = []
-    for external_id, status in (("open", JobStatus.ACTIVE), ("gone", JobStatus.CLOSED)):
+    for external_id, status, location in (
+        ("open", JobStatus.ACTIVE, "Tel Aviv"),
+        ("gone", JobStatus.CLOSED, "Tel Aviv"),
+        ("abroad", JobStatus.ACTIVE, "Warsaw, Poland"),
+    ):
         job = JobPosting(
             company_id=company.id,
             career_source_id=source.id,
             external_job_id=external_id,
             title="Junior Software Engineer",
             normalized_title="junior software engineer",
+            location_text=location,
+            country=classify_country(location),
             source_url=f"https://job-boards.greenhouse.io/acme/jobs/{external_id}",
             content_hash=hashlib.sha256(external_id.encode()).hexdigest(),
             status=status,
@@ -69,13 +76,13 @@ def _seed(db_session: Session) -> tuple[JobPosting, JobPosting]:
         )
         jobs.append(job)
     db_session.commit()
-    return jobs[0], jobs[1]
+    return jobs[0], jobs[1], jobs[2]
 
 
 def test_top_matches_never_lists_closed_jobs(api_client: TestClient, db_session: Session) -> None:
     """JobMatch rows are kept when a job closes (history) - a 95-point
     match for a job that vanished from the ATS used to stay at #1 forever."""
-    open_job, closed_job = _seed(db_session)
+    open_job, closed_job, _ = _seed(db_session)
 
     response = api_client.get("/matches/top")
 
@@ -83,6 +90,21 @@ def test_top_matches_never_lists_closed_jobs(api_client: TestClient, db_session:
     job_ids = {match["job_id"] for match in response.json()}
     assert open_job.id in job_ids
     assert closed_job.id not in job_ids
+
+
+def test_top_matches_are_israel_only_by_default(
+    api_client: TestClient, db_session: Session
+) -> None:
+    """location_score is a 3% tiebreaker, so a strong match abroad used to
+    outrank every Israeli one in the list the user actually reads."""
+    open_job, _, abroad_job = _seed(db_session)
+
+    default_ids = {match["job_id"] for match in api_client.get("/matches/top").json()}
+    assert open_job.id in default_ids
+    assert abroad_job.id not in default_ids
+
+    everything = api_client.get("/matches/top", params={"israel_only": "false"}).json()
+    assert abroad_job.id in {match["job_id"] for match in everything}
 
 
 def test_top_matches_rejects_out_of_range_params(api_client: TestClient) -> None:

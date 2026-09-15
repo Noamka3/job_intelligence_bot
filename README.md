@@ -376,7 +376,8 @@ company sync).
 # Score every ACTIVE job against the active CV + every enabled target role
 .venv/Scripts/python.exe -m app.cli score-all
 
-# Top matches for the active candidate profile, best first
+# Top matches for the active candidate profile, best first (Israel-only
+# by default, like /jobs - pass israel_only=false to see everything)
 curl "http://127.0.0.1:8000/matches/top?limit=20"
 curl "http://127.0.0.1:8000/matches/top?min_score=70"
 

@@ -4,7 +4,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi import status as http_status
-from sqlalchemy import not_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.timezone import interpret_naive_as_default_timezone
@@ -14,7 +14,7 @@ from app.models.job_feedback import JobFeedback
 from app.models.job_posting import JobPosting
 from app.schemas.feedback import JobFeedbackCreate, JobFeedbackRead
 from app.schemas.job import JobDetailRead, JobRead
-from app.services.jobs.location import NON_ISRAEL_LOCATION_SQL_REGEX
+from app.services.jobs.israel_filter import israel_only_clause
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -48,17 +48,7 @@ def list_jobs(
     if location:
         query = query.where(JobPosting.normalized_location.ilike(f"%{location.lower()}%"))
     if israel_only:
-        # Same decision ingestion/matching make in Python (see
-        # app/services/jobs/location.py): keep anything classified as
-        # Israel, keep anything unrecognized rather than risk hiding a
-        # real Israeli listing, and drop only an explicit non-Israel
-        # signal - matched on word boundaries, so "USA" can't hide
-        # "JerUSAlem".
-        query = query.where(
-            (JobPosting.country == "Israel")
-            | JobPosting.location_text.is_(None)
-            | not_(JobPosting.location_text.regexp_match(NON_ISRAEL_LOCATION_SQL_REGEX, flags="i"))
-        )
+        query = query.where(israel_only_clause())
     if discovered_since is not None:
         query = query.where(
             JobPosting.first_seen_at >= interpret_naive_as_default_timezone(discovered_since)

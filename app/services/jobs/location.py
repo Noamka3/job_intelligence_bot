@@ -108,6 +108,8 @@ NON_ISRAEL_LOCATION_HINTS = frozenset(
         "france",
         "paris",
         "india",
+        "australia",
+        "sydney",
         "remote - global",
     }
 )

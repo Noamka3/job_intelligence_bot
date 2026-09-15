@@ -11,6 +11,7 @@ from app.models.job_match import JobMatch
 from app.models.job_posting import JobPosting
 from app.schemas.match import MatchRead
 from app.services.candidate.profile_service import get_active_profile
+from app.services.jobs.israel_filter import israel_only_clause
 
 router = APIRouter(prefix="/matches", tags=["matches"])
 
@@ -19,6 +20,7 @@ router = APIRouter(prefix="/matches", tags=["matches"])
 def top_matches(
     target_role_id: int | None = None,
     min_score: float = Query(0.0, ge=0.0, le=100.0),
+    israel_only: bool = True,
     limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
 ) -> list[MatchRead]:
@@ -41,6 +43,11 @@ def top_matches(
         .order_by(JobMatch.final_score.desc())
         .limit(limit)
     )
+    if israel_only:
+        # location_score is a small tiebreaker (3%), not an exclusion -
+        # a strong Warsaw match would otherwise rank above weaker Israeli
+        # ones, and the user asked for Israel only.
+        query = query.where(israel_only_clause())
     if target_role_id is not None:
         query = query.where(JobMatch.target_role_id == target_role_id)
 
