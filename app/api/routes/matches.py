@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.models.company import Company
+from app.models.enums import JobStatus
 from app.models.job_match import JobMatch
 from app.models.job_posting import JobPosting
 from app.schemas.match import MatchRead
@@ -17,8 +18,8 @@ router = APIRouter(prefix="/matches", tags=["matches"])
 @router.get("/top", response_model=list[MatchRead])
 def top_matches(
     target_role_id: int | None = None,
-    min_score: float = 0.0,
-    limit: int = 50,
+    min_score: float = Query(0.0, ge=0.0, le=100.0),
+    limit: int = Query(50, ge=1, le=200),
     db: Session = Depends(get_db),
 ) -> list[MatchRead]:
     candidate = get_active_profile(db)
@@ -29,9 +30,16 @@ def top_matches(
         select(JobMatch, JobPosting, Company)
         .join(JobPosting, JobMatch.job_id == JobPosting.id)
         .join(Company, JobPosting.company_id == Company.id)
-        .where(JobMatch.candidate_profile_id == candidate.id, JobMatch.final_score >= min_score)
+        .where(
+            JobMatch.candidate_profile_id == candidate.id,
+            JobMatch.final_score >= min_score,
+            # JobMatch rows are kept when a job closes (history), so the
+            # filter has to happen here - a great match for a job that's
+            # gone is not something to apply to.
+            JobPosting.status == JobStatus.ACTIVE,
+        )
         .order_by(JobMatch.final_score.desc())
-        .limit(min(limit, 200))
+        .limit(limit)
     )
     if target_role_id is not None:
         query = query.where(JobMatch.target_role_id == target_role_id)

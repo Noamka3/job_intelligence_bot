@@ -83,10 +83,20 @@ class ComeetAdapter:
         # nicer starting point than the single HTML blob most other ATSes
         # return (spec §11 wants responsibilities/qualifications split out
         # where the source actually provides that split).
-        sections = {
-            str(section.get("name", "")).strip().lower(): html_to_text(section.get("value"))
+        sections = [
+            (str(section.get("name", "")).strip(), html_to_text(section.get("value")))
             for section in data.get("details") or []
-        }
+        ]
+        by_name = {name.lower(): text for name, text in sections}
+        # Anything that isn't one of the two named parts we split out
+        # ("Advantages", "About the role", ...) still belongs in the
+        # description - dropping custom sections would embed only a
+        # fraction of what the posting actually says.
+        description_parts = [
+            text if name.lower() == "description" else f"{name}\n{text}"
+            for name, text in sections
+            if text and name.lower() not in ("responsibilities", "requirements")
+        ]
 
         return JobDetails(
             external_job_id=str(data.get("uid", stub.external_job_id)),
@@ -94,9 +104,9 @@ class ComeetAdapter:
             department=data.get("department"),
             location_text=location.get("name") or stub.location_text,
             employment_type=map_employment_type(data.get("employment_type")),
-            description=sections.get("description"),
-            responsibilities=sections.get("responsibilities"),
-            qualifications=sections.get("requirements"),
+            description="\n\n".join(description_parts) or None,
+            responsibilities=by_name.get("responsibilities") or None,
+            qualifications=by_name.get("requirements") or None,
             source_url=data.get("url_active_page") or stub.source_url,
             apply_url=data.get("url_active_page") or stub.apply_url,
             source_updated_at=parse_timestamp(data.get("time_updated")),

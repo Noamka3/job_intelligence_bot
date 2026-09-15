@@ -28,6 +28,16 @@ def get_engine() -> Engine:
     return _engine
 
 
+def dispose_engine_after_fork() -> None:
+    """SQLAlchemy's documented recipe for prefork workers: a child process
+    must not reuse pooled connections inherited from its parent (two
+    processes would share one socket), so drop the pool - without closing
+    the connections, which still belong to the parent.
+    """
+    if _engine is not None:
+        _engine.dispose(close=False)
+
+
 def get_session_factory() -> sessionmaker[Session]:
     global _SessionLocal
     if _SessionLocal is None:

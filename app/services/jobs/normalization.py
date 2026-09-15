@@ -59,7 +59,7 @@ def build_embedding_text(details: JobDetails) -> str:
         parts.append(details.qualifications)
 
     normalized_description = build_normalized_description(details)
-    if normalized_description and not (details.responsibilities or details.qualifications):
+    if normalized_description:
         parts.append(normalized_description)
 
     return "\n".join(parts)
@@ -74,21 +74,26 @@ def normalize_job_title(title: str) -> str:
 
 
 # Common Israeli city name variants (spec §28) collapsed to one canonical
-# form, so "Tel Aviv-Yafo" and "Tel Aviv" fingerprint/filter identically.
+# form, so "Tel Aviv-Yafo, Israel" and "Tel Aviv" fingerprint/filter
+# identically. Applied as in-place replacements, longest variant first,
+# since real location strings are rarely just the city ("Tel Aviv-Yafo,
+# Tel Aviv District, Israel" is Greenhouse's standard form).
 _LOCATION_ALIASES = {
     "tel aviv-yafo": "tel aviv",
     "tel aviv yafo": "tel aviv",
     "tel-aviv": "tel aviv",
     "be'er sheva": "beer sheva",
     "beer-sheva": "beer sheva",
-    "beer sheva": "beer sheva",
     "petach tikva": "petah tikva",
     "petah-tikva": "petah tikva",
 }
+_LOCATION_ALIASES_LONGEST_FIRST = sorted(_LOCATION_ALIASES.items(), key=lambda kv: -len(kv[0]))
 
 
 def normalize_location(location_text: str | None) -> str | None:
     if not location_text:
         return None
     normalized = " ".join(location_text.strip().lower().split())
-    return _LOCATION_ALIASES.get(normalized, normalized)
+    for variant, canonical in _LOCATION_ALIASES_LONGEST_FIRST:
+        normalized = normalized.replace(variant, canonical)
+    return normalized

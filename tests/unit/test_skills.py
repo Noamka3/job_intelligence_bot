@@ -35,6 +35,34 @@ def test_extract_skills_from_text_empty_input() -> None:
     assert extract_skills_from_text("") == set()
 
 
+def test_ordinary_english_words_are_not_skills() -> None:
+    """Reproduced on a real non-technical posting: "go-to-market", "send
+    your CV", "the rest of the team", "jobs@company.net" and "spring
+    internship" used to yield {go, computer vision, rest api, c#, spring}
+    - and a bogus "go experience requested" concern on every match."""
+    text = (
+        "Join our go-to-market team. Please send your CV to jobs@company.net. "
+        "You'll work with the rest of the team, react quickly to change, and "
+        "go the extra mile. Spring 2026 internship. Express yourself."
+    )
+    assert extract_skills_from_text(text) == set()
+
+
+def test_ambiguous_aliases_match_in_technical_context() -> None:
+    assert extract_skills_from_text("Languages: Python, Go, Java") >= {"python", "go", "java"}
+    assert "go" in extract_skills_from_text("2+ years of experience with Go")
+    assert "go" in extract_skills_from_text("Go developer wanted")
+    assert "go" in extract_skills_from_text("Golang microservices")
+    assert "react" in extract_skills_from_text("Frontend: React/Redux, TypeScript")
+    assert "react" in extract_skills_from_text("Experience with React and Node.js")
+    assert "spring" in extract_skills_from_text("Java, Spring Boot, Hibernate")
+    assert "go" in extract_skills_from_text("Skills\nPython\nGo\nDocker")  # <li> per line
+    assert "c#" in extract_skills_from_text("C# / .NET Core backend")
+    assert "c#" in extract_skills_from_text("ASP.NET developer")
+    assert "rest api" in extract_skills_from_text("Design RESTful services")
+    assert "computer vision" in extract_skills_from_text("Computer vision pipelines")
+
+
 def test_score_skills_full_match() -> None:
     score, matched, missing = score_skills({"python", "docker"}, {"python", "docker"})
     assert score == 1.0

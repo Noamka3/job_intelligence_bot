@@ -43,10 +43,13 @@ def read_company_rows() -> list[CompanySheetRow]:
     service = get_sheets_service()
     title = resolve_sheet_title(settings.google_sheet_id, settings.google_sheet_gid)
 
+    # A1 notation quotes the tab title; a literal ' inside it is escaped
+    # by doubling, as in SQL.
+    quoted_title = "'" + title.replace("'", "''") + "'"
     result = (
         service.spreadsheets()
         .values()
-        .get(spreadsheetId=settings.google_sheet_id, range=f"'{title}'!A:B")
+        .get(spreadsheetId=settings.google_sheet_id, range=f"{quoted_title}!A:B")
         .execute()
     )
     raw_rows: list[list[str]] = result.get("values", [])

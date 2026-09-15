@@ -7,7 +7,9 @@ from app.db.session import get_db
 from app.schemas.target_role import TargetRoleCreate, TargetRoleRead, TargetRoleUpdate
 from app.services.embeddings import get_embedding_provider
 from app.services.embeddings.base import EmbeddingProvider
+from app.services.matching.runner import score_all_active_jobs
 from app.services.target_roles import (
+    TargetRoleAlreadyExistsError,
     TargetRoleNotFoundError,
     create_target_role,
     list_target_roles,
@@ -28,7 +30,13 @@ def create_role(
     db: Session = Depends(get_db),
     embedding_provider: EmbeddingProvider = Depends(get_embedding_provider),
 ) -> TargetRoleRead:
-    role = create_target_role(db, data, embedding_provider)
+    try:
+        role = create_target_role(db, data, embedding_provider)
+    except TargetRoleAlreadyExistsError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    # Jobs already in the database get scored against the new role right
+    # away instead of waiting for a crawl to touch each of them.
+    score_all_active_jobs(db)
     return TargetRoleRead.model_validate(role)
 
 
@@ -43,4 +51,7 @@ def patch_role(
         role = update_target_role(db, role_id, data, embedding_provider)
     except TargetRoleNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    except TargetRoleAlreadyExistsError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    score_all_active_jobs(db)
     return TargetRoleRead.model_validate(role)

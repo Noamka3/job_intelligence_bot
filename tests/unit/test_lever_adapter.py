@@ -53,3 +53,15 @@ def test_fetch_job_uses_cached_raw_without_a_second_network_call() -> None:
     assert details.description is not None
     assert "Join our backend team." in details.description
     assert "Requirements" in details.description
+
+
+def test_created_at_is_not_reported_as_updated_at() -> None:
+    """Lever has no updated-at; mapping createdAt to source_updated_at
+    made every later edit to a posting invisible (the crawler's cheap
+    unchanged-check compared two creation times that never move)."""
+    stub = LeverAdapter()._to_stub(_POSTING, _SOURCE)  # noqa: SLF001 - test-only access
+    details = LeverAdapter().fetch_job(_SOURCE, stub)
+
+    assert stub.source_updated_at is None
+    assert details.source_updated_at is None
+    assert details.source_published_at is not None

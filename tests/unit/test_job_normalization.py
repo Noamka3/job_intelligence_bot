@@ -35,6 +35,32 @@ def test_normalize_location_applies_known_aliases() -> None:
     assert normalize_location(None) is None
 
 
+def test_normalize_location_applies_aliases_inside_longer_strings() -> None:
+    # Greenhouse's standard office string - the alias used to apply only
+    # on an exact match, so this never collapsed to "tel aviv".
+    assert normalize_location("Tel Aviv-Yafo, Tel Aviv District, Israel") == (
+        "tel aviv, tel aviv district, israel"
+    )
+    assert normalize_location("Petach Tikva, Israel") == "petah tikva, israel"
+
+
+def test_build_embedding_text_keeps_description_alongside_split_sections() -> None:
+    # Comeet splits "Description" / "Responsibilities" / "Requirements"
+    # into distinct sections; the description used to be dropped from the
+    # embedding whenever either of the other two existed.
+    details = JobDetails(
+        external_job_id="1",
+        title="Junior Engineer",
+        description="About the role: build the platform.",
+        responsibilities="Write code.",
+        qualifications="0-2 years experience.",
+        source_url="https://example.com/job/1",
+    )
+    text = build_embedding_text(details)
+    assert "About the role: build the platform." in text
+    assert "Write code." in text
+
+
 def test_build_embedding_text_includes_key_fields() -> None:
     details = JobDetails(
         external_job_id="1",

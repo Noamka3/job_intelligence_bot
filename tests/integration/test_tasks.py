@@ -95,6 +95,31 @@ def test_dispatch_due_sources_enqueues_one_task_per_due_source(
     assert source.id in enqueued
 
 
+def test_dispatch_leases_each_source_so_the_next_tick_cannot_redispatch_it(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With a long queue, Beat's next tick used to re-enqueue every source
+    still waiting; two workers then crawled the same board at once and
+    collided on the (career_source_id, external_job_id) unique key."""
+    source = _make_source(db_session)
+    monkeypatch.setattr(crawlers.crawl_one_source, "delay", lambda source_id: None)
+    monkeypatch.setattr(
+        crawlers, "get_session_factory", lambda: _session_factory_returning(db_session)
+    )
+
+    crawlers.dispatch_due_sources()
+    db_session.refresh(source)
+    assert source.next_check_at is not None
+    assert source.next_check_at > utc_now()
+
+    enqueued: list[int] = []
+    monkeypatch.setattr(
+        crawlers.crawl_one_source, "delay", lambda source_id: enqueued.append(source_id)
+    )
+    crawlers.dispatch_due_sources()
+    assert source.id not in enqueued
+
+
 def test_dispatch_due_sources_skips_sources_not_yet_due(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:

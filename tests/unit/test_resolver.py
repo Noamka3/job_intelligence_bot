@@ -46,6 +46,49 @@ def test_known_ats_hostnames_classify_without_network_call() -> None:
         assert resolved.unsupported_reason is None
 
 
+def test_hostname_match_is_on_label_boundaries_not_substrings() -> None:
+    """"clever.co" contains "lever.co" - a substring match would classify
+    it as a Lever board with identifier "jobs" and 404 on every crawl."""
+    cases = {
+        "https://clever.co/jobs": CareerSourceType.LEVER,
+        "https://www.clever.co/careers": CareerSourceType.LEVER,
+        "https://greenhouse.io.example.net/x": CareerSourceType.GREENHOUSE,
+    }
+    for url, wrongly_matched_type in cases.items():
+        with respx.mock:
+            respx.get(url).mock(return_value=httpx.Response(200, text="<html></html>"))
+            resolved = resolve_career_source(url)
+        assert resolved.source_type != wrongly_matched_type, url
+
+
+def test_greenhouse_embedded_board_takes_token_from_query_param() -> None:
+    resolved = resolve_career_source("https://boards.greenhouse.io/embed/job_board?for=acme")
+    assert resolved.source_type == CareerSourceType.GREENHOUSE
+    assert resolved.external_identifier == "acme"
+
+
+def test_scheme_less_url_is_normalized_with_https() -> None:
+    from app.ingestion.resolver import normalize_source_url
+
+    assert normalize_source_url("www.comeet.com/jobs/acme/A1.234") == (
+        "https://www.comeet.com/jobs/acme/A1.234"
+    )
+    assert normalize_source_url("  https://x.example/  ") == "https://x.example/"
+    assert normalize_source_url("   ") is None
+    assert normalize_source_url(None) is None
+
+    resolved = resolve_career_source("www.comeet.com/jobs/acme/A1.234")
+    assert resolved.source_type == CareerSourceType.COMEET
+
+
+@respx.mock
+def test_probe_with_an_invalid_url_falls_back_instead_of_raising() -> None:
+    """httpx.InvalidURL is not an HTTPError - a sheet cell with a stray
+    newline used to escape the probe and abort the entire sheet sync."""
+    resolved = resolve_career_source("https://careers.example.com/jobs\nhttps://other.example/")
+    assert resolved.source_type == CareerSourceType.GENERIC_HTML
+
+
 @respx.mock
 def test_probe_detects_jsonld_job_posting() -> None:
     html = """

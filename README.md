@@ -32,6 +32,35 @@ worker container and inspected the resulting `CrawlRun` rows in Postgres -
 found and fixed a real bug in the process, see the "Celery worker runs out
 of memory" troubleshooting entry below.
 
+After Phase 6, a full code review of Phases 1-6 found and fixed ~25 real
+defects (each with a regression test). The ones that changed stored data
+or visible behavior:
+
+- Greenhouse returns descriptions HTML-entity-*escaped* on top of being
+  HTML; every Greenhouse job in the database had been stored as literal
+  `<div class="content-intro"><p>...` markup and embedded as such.
+  Verified live against a real board; existing rows were re-fetched.
+- A JSON-LD `datePosted` without a time zone crashed the crawl of that
+  source on every tick (naive vs. aware datetime arithmetic).
+- One job failing to fetch (a posting pulled between the list call and
+  the detail call - routine) aborted the whole source's crawl, losing
+  every other job from that run, with no `FAILED` record and no backoff.
+  Now it's skipped and counted in `CrawlRun.jobs_failed`.
+- Beat could re-dispatch a source that was still queued from the previous
+  tick, so two workers crawled the same board and collided on the unique
+  key; dispatch now leases each source for one poll interval.
+- `/matches/top` listed closed jobs; the Israel-only filter in `/jobs`
+  used bare substrings ("USA" hid "JerUSAlem", and "Tel Aviv / New York"
+  was dropped despite being classified as Israel at ingest).
+- Skill extraction counted "go-to-market", "send your CV", "the rest of
+  the team" and "jobs@company.net" as Go, computer vision, REST and C#;
+  a company intro's "over 15 years in cybersecurity" made junior jobs
+  read as senior. See `docs/matching.md`.
+- Uploading a CV / adding a target role now rescores existing jobs, so
+  `/matches/top` isn't empty until the next crawl.
+- Corrupt/scanned PDFs, duplicate role names and invalid query params
+  return 400/409/422 instead of 500.
+
 Embeddings default to a **free local model** (`EMBEDDING_PROVIDER=local`,
 see `app/services/embeddings/local_provider.py`) - no API key needed for
 job ingestion to work end-to-end. Structured CV extraction (Phase 2)
@@ -90,8 +119,9 @@ docker compose up -d postgres redis
 
 # 4. Apply migrations
 .venv/Scripts/python.exe -m alembic upgrade head
-# First real embedding call downloads the local model (~220MB, one-time,
-# cached under ~/.cache/fastembed/ afterward).
+# First real embedding call downloads the local model (~240MB, one-time,
+# cached under $FASTEMBED_CACHE_PATH, or <system temp>/fastembed_cache by
+# default - fastembed's own default, not ~/.cache).
 
 # 5. Run the API
 .venv/Scripts/python.exe -m uvicorn app.main:app --reload
@@ -152,6 +182,27 @@ docker logs -f job_bot_beat     # watch the 5-minute dispatch tick
 If you're on a machine with a TLS-inspecting antivirus (see the pip/SSL
 troubleshooting entries below), building `worker`/`beat` needs the same
 CA cert workaround as the host - see `certs/README.md`.
+
+What the scheduler actually does each tick:
+
+- `dispatch_due_sources` selects enabled sources of enabled companies
+  whose `next_check_at` has passed **and** whose type has an adapter
+  (Greenhouse/Lever/Ashby/Comeet/JSON-LD today) - `workday`,
+  `generic_html`, ... are left untouched until Phase 8 registers their
+  adapters, so they're picked up on the first tick after that instead
+  of sitting in a 24h backoff.
+- Each selected source is leased for one poll interval *before* being
+  enqueued, so a long queue can't be re-dispatched by the next tick.
+- `crawl_one_source` runs the same `crawl_source()` as `crawl-now`: a
+  job whose detail fetch fails is skipped and counted in
+  `CrawlRun.jobs_failed` (the run still succeeds unless every fetch
+  failed, which fails the run and backs the source off).
+
+The image runs as a non-root user; the model cache lives in the
+`fastembed_cache` volume at `/home/app/.cache/fastembed`
+(`FASTEMBED_CACHE_PATH`). If you change either, recreate the volume
+(`docker volume rm bot_career_fastembed_cache`) - a volume first mounted
+by an older image is root-owned and the first download fails with EACCES.
 
 ## Running tests
 
@@ -336,11 +387,11 @@ curl -X POST http://127.0.0.1:8000/jobs/1/feedback \
 ```
 
 Since Phase 6, every new/changed job is scored automatically right after
-ingestion - `score-all` is now mainly useful after uploading a *new* CV or
-adding a target role, to backfill scores against jobs that were already in
-the database. See `docs/matching.md` for how the seven component scores
-combine, and why the weights differ from the spec's suggested starting
-point. Known
+ingestion, and uploading/activating a CV or creating/patching a target
+role rescores every active job - `score-all` is the manual backfill for
+anything else (e.g. after changing `WEIGHT_*`). See `docs/matching.md`
+for how the seven component scores combine, and why the weights differ
+from the spec's suggested starting point. Known
 limitation found during live testing: a job in a clearly different field
 (e.g. "Junior Customer Support") can still rank surprisingly high purely
 from a matching seniority signal + a couple of generic skill overlaps

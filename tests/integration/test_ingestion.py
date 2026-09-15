@@ -202,6 +202,138 @@ def test_crawl_source_with_no_registered_adapter_fails_cleanly(
     assert run.error_type == "NoAdapter"
 
 
+class _FailingFetchAdapter(_FakeAdapter):
+    def __init__(
+        self, stubs: list[JobStub], details_by_id: dict[str, JobDetails], failing: set[str]
+    ) -> None:
+        super().__init__(stubs, details_by_id)
+        self.failing = failing
+
+    def fetch_job(self, source: CareerSource, stub: JobStub) -> JobDetails:
+        if stub.external_job_id in self.failing:
+            raise RuntimeError("404 - posting removed between list and fetch")
+        return super().fetch_job(source, stub)
+
+
+def test_one_job_failing_to_fetch_does_not_sink_the_rest(
+    db_session: Session,
+    fake_embedding_provider: FakeEmbeddingProvider,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Before: the exception escaped crawl_source - the whole run rolled
+    back (every other job lost), no FAILED CrawlRun, no backoff, and Celery
+    retried the same crash on every tick."""
+    source = _make_source(db_session)
+    stubs = [
+        JobStub(external_job_id=i, title=f"Job {i}", source_url=source.source_url)
+        for i in ("1", "2", "3")
+    ]
+    adapter = _FailingFetchAdapter(
+        stubs, {"1": _details("1"), "3": _details("3")}, failing={"2"}
+    )
+    monkeypatch.setattr(ingestion, "get_adapter", lambda _: adapter)
+
+    run = ingestion.crawl_source(db_session, source, fake_embedding_provider)
+
+    assert run.status == CrawlRunStatus.SUCCESS
+    assert run.jobs_seen == 3
+    assert run.jobs_created == 2
+    assert run.jobs_failed == 1
+    stored = {
+        job.external_job_id
+        for job in db_session.execute(
+            select(JobPosting).where(JobPosting.career_source_id == source.id)
+        ).scalars()
+    }
+    assert stored == {"1", "3"}
+
+
+def test_every_fetch_failing_fails_the_run_and_backs_off(
+    db_session: Session,
+    fake_embedding_provider: FakeEmbeddingProvider,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _make_source(db_session)
+    stubs = [JobStub(external_job_id="1", title="Job", source_url=source.source_url)]
+    monkeypatch.setattr(
+        ingestion, "get_adapter", lambda _: _FailingFetchAdapter(stubs, {}, failing={"1"})
+    )
+
+    run = ingestion.crawl_source(db_session, source, fake_embedding_provider)
+
+    assert run.status == CrawlRunStatus.FAILED
+    assert run.error_type == "AllJobsFailed"
+    assert source.consecutive_failures == 1
+
+
+def test_failed_refresh_leaves_the_existing_job_untouched(
+    db_session: Session,
+    fake_embedding_provider: FakeEmbeddingProvider,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _make_source(db_session)
+    stub = JobStub(external_job_id="1", title="Old Title", source_url=source.source_url)
+    monkeypatch.setattr(
+        ingestion,
+        "get_adapter",
+        lambda _: _FakeAdapter([stub], {"1": _details("1", title="Old Title")}),
+    )
+    ingestion.crawl_source(db_session, source, fake_embedding_provider)
+
+    changed_stub = JobStub(external_job_id="1", title="New Title", source_url=source.source_url)
+    monkeypatch.setattr(
+        ingestion,
+        "get_adapter",
+        lambda _: _FailingFetchAdapter([changed_stub], {}, failing={"1"}),
+    )
+    run = ingestion.crawl_source(db_session, source, fake_embedding_provider)
+
+    job = db_session.execute(
+        select(JobPosting).where(JobPosting.career_source_id == source.id)
+    ).scalar_one()
+    assert job.title == "Old Title"
+    assert job.status == JobStatus.ACTIVE  # it was listed, so it's not "missing"
+    assert run.jobs_failed == 1
+
+
+def test_get_due_sources_skips_types_without_an_adapter_and_disabled_companies(
+    db_session: Session,
+) -> None:
+    company = Company(name="Acme", normalized_name="acme")
+    disabled_company = Company(name="Gone", normalized_name="gone", enabled=False)
+    db_session.add_all([company, disabled_company])
+    db_session.flush()
+
+    no_adapter_yet = CareerSource(
+        company_id=company.id,
+        source_type=CareerSourceType.GENERIC_HTML,
+        source_url="https://a",
+        enabled=True,
+    )
+    of_disabled_company = CareerSource(
+        company_id=disabled_company.id,
+        source_type=CareerSourceType.GREENHOUSE,
+        source_url="https://b",
+        enabled=True,
+    )
+    due = CareerSource(
+        company_id=company.id,
+        source_type=CareerSourceType.GREENHOUSE,
+        source_url="https://c",
+        enabled=True,
+    )
+    db_session.add_all([no_adapter_yet, of_disabled_company, due])
+    db_session.commit()
+
+    result = ingestion.get_due_sources(db_session)
+
+    assert due in result
+    assert no_adapter_yet not in result
+    assert of_disabled_company not in result
+    # Untouched, so it's picked up on the first tick once its adapter lands.
+    assert no_adapter_yet.next_check_at is None
+
+
 def test_get_due_sources_only_returns_enabled_and_due(db_session: Session) -> None:
     company = Company(name="Acme", normalized_name="acme")
     db_session.add(company)

@@ -21,11 +21,11 @@ _SKILL_ALIASES: dict[str, tuple[str, ...]] = {
     "javascript": ("javascript", "js", "ecmascript"),
     "typescript": ("typescript", "ts"),
     "node.js": ("node.js", "node", "nodejs", "node js"),
-    "react": ("react", "react.js", "reactjs"),
+    "react": ("react", "react.js", "reactjs", "react native"),
     "vue": ("vue", "vue.js", "vuejs"),
     "angular": ("angular", "angular.js", "angularjs"),
     "java": ("java",),
-    "c#": ("c#", "csharp", "c sharp", ".net", "dotnet"),
+    "c#": ("c#", "csharp", "c sharp", ".net", "dotnet", "asp.net", "vb.net"),
     "c++": ("c++", "cpp"),
     "go": ("go", "golang"),
     "rust": ("rust",),
@@ -36,7 +36,16 @@ _SKILL_ALIASES: dict[str, tuple[str, ...]] = {
     "mysql": ("mysql",),
     "mongodb": ("mongodb", "mongo"),
     "redis": ("redis",),
-    "rest api": ("rest api", "rest apis", "restful", "restful api", "rest"),
+    "rest api": (
+        "rest api",
+        "rest apis",
+        "restful",
+        "restful api",
+        "restful apis",
+        "rest services",
+        "rest endpoints",
+        "rest interfaces",
+    ),
     "graphql": ("graphql",),
     "grpc": ("grpc",),
     "docker": ("docker", "containerization"),
@@ -53,15 +62,15 @@ _SKILL_ALIASES: dict[str, tuple[str, ...]] = {
     "django": ("django",),
     "flask": ("flask",),
     "fastapi": ("fastapi",),
-    "spring": ("spring", "spring boot"),
-    "express": ("express", "express.js", "expressjs"),
+    "spring": ("spring", "spring boot", "spring framework"),
+    "express": ("express.js", "expressjs", "express js"),
     "kafka": ("kafka",),
     "rabbitmq": ("rabbitmq",),
     "machine learning": ("machine learning", "ml"),
-    "deep learning": ("deep learning", "dl"),
+    "deep learning": ("deep learning",),
     "pytorch": ("pytorch",),
     "tensorflow": ("tensorflow",),
-    "computer vision": ("computer vision", "cv"),
+    "computer vision": ("computer vision",),
     "nlp": ("nlp", "natural language processing"),
     "data science": ("data science",),
     "pandas": ("pandas",),
@@ -80,6 +89,51 @@ _ALIAS_TO_CANONICAL: dict[str, str] = {
 _ALIASES_BY_LENGTH_DESC: list[str] = sorted(_ALIAS_TO_CANONICAL, key=len, reverse=True)
 
 _WORD_BOUNDARY_UNSAFE = re.compile(r"[.+#]")
+
+# Word boundaries alone aren't enough for aliases that are also ordinary
+# English words. Seen on real postings: "go-to-market", "react quickly",
+# "spring 2026 internship". These only count in a technical context: as
+# a whole list item ("Python, Go, Java", a "<li>Go</li>" line), next to
+# a tech noun ("Go developer"), or after a skill preposition ("experience
+# with Go"). A comma alone is not a list - prose is full of them.
+_LIST_DELIMITER = r"[,/(|&:;•·]"
+_TECH_NOUNS = {
+    "go": r"developer|engineer|programming|language|lang|services?|microservices|backend|code",
+    "react": (
+        r"developer|engineer|components?|hooks|framework|library|applications?|apps?"
+        r"|frontend|front-end"
+    ),
+    "spring": r"boot|framework|mvc|cloud|data|security|batch",
+}
+
+
+def _contextual_pattern(word: str, tech_nouns: str) -> str:
+    w = re.escape(word)
+    return (
+        rf"(?:(?<={_LIST_DELIMITER})|^)[ \t]*{w}\b(?!-)[ \t]*(?={_LIST_DELIMITER}|[.)]|$)"
+        rf"|\b{w}\s+(?:{tech_nouns})\b"
+        rf"|\b(?:in|with|using|of|on)\s+{w}\b(?!-)"
+    )
+
+
+_ALIAS_PATTERN_OVERRIDES: dict[str, str] = {
+    word: _contextual_pattern(word, nouns) for word, nouns in _TECH_NOUNS.items()
+}
+# A literal ".net" would also match inside "jobs@company.net" / "site.net".
+_ALIAS_PATTERN_OVERRIDES[".net"] = r"(?<![\w.@])\.net\b"
+
+
+def _alias_pattern(alias: str) -> re.Pattern[str]:
+    if alias in _ALIAS_PATTERN_OVERRIDES:
+        return re.compile(_ALIAS_PATTERN_OVERRIDES[alias], re.MULTILINE)
+    if _WORD_BOUNDARY_UNSAFE.search(alias):
+        return re.compile(re.escape(alias))
+    return re.compile(rf"\b{re.escape(alias)}\b")
+
+
+_ALIAS_PATTERNS: list[tuple[str, re.Pattern[str]]] = [
+    (_ALIAS_TO_CANONICAL[alias], _alias_pattern(alias)) for alias in _ALIASES_BY_LENGTH_DESC
+]
 
 
 def normalize_skill(raw: str) -> str:
@@ -124,14 +178,10 @@ def extract_skills_from_text(text: str) -> set[str]:
         return set()
     lowered = text.lower()
     found: set[str] = set()
-    for alias in _ALIASES_BY_LENGTH_DESC:
-        canonical = _ALIAS_TO_CANONICAL[alias]
+    for canonical, pattern in _ALIAS_PATTERNS:
         if canonical in found:
             continue
-        pattern = (
-            re.escape(alias) if _WORD_BOUNDARY_UNSAFE.search(alias) else rf"\b{re.escape(alias)}\b"
-        )
-        lowered, replacements = re.subn(pattern, lambda m: " " * len(m.group()), lowered)
+        lowered, replacements = pattern.subn(lambda m: " " * len(m.group()), lowered)
         if replacements:
             found.add(canonical)
     return found

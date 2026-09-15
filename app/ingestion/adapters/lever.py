@@ -47,7 +47,12 @@ class LeverAdapter:
             location_text=categories.get("location"),
             source_url=posting.get("hostedUrl") or source.source_url,
             apply_url=posting.get("applyUrl"),
-            source_updated_at=parse_timestamp(posting.get("createdAt")),
+            # Lever exposes createdAt only, no updated-at: leaving this
+            # unset makes the crawler re-compare content every time (free
+            # here - the list call already carried the full posting in
+            # `raw`) instead of treating an edited posting as unchanged
+            # forever because its creation time never moves.
+            source_updated_at=None,
             raw=posting,
         )
 
@@ -66,7 +71,6 @@ class LeverAdapter:
         if additional:
             description_parts.append(additional)
 
-        created_at = parse_timestamp(posting.get("createdAt"))
         return JobDetails(
             external_job_id=str(posting.get("id", stub.external_job_id)),
             title=posting.get("text", stub.title),
@@ -76,6 +80,6 @@ class LeverAdapter:
             description="\n\n".join(part for part in description_parts if part),
             source_url=posting.get("hostedUrl") or stub.source_url,
             apply_url=posting.get("applyUrl") or stub.apply_url,
-            source_published_at=created_at,
-            source_updated_at=created_at,
+            source_published_at=parse_timestamp(posting.get("createdAt")),
+            source_updated_at=None,
         )

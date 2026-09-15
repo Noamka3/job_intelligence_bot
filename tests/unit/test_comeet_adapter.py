@@ -75,3 +75,35 @@ def test_fetch_job_splits_description_into_sections() -> None:
     assert details.description == "About the role."
     assert details.responsibilities == "Ship features."
     assert details.qualifications == "Python experience."
+
+
+@respx.mock
+def test_fetch_job_keeps_custom_sections_in_the_description() -> None:
+    """Comeet postings use company-specific section names ("Advantages",
+    "About the team", ...) that used to be dropped entirely, so only a
+    fraction of the posting was embedded/matched."""
+    respx.get(
+        "https://www.comeet.com/careers-api/2.0/company/F1.008/positions/AC.F64",
+        params={"token": "abc123token", "details": "true"},
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                **_POSITION_STUB,
+                "details": [
+                    {"name": "About the team", "value": "<p>We are five.</p>"},
+                    {"name": "Requirements", "value": "<p>Python.</p>"},
+                    {"name": "Advantages", "value": "<p>Docker.</p>"},
+                ],
+            },
+        )
+    )
+    stub = ComeetAdapter()._to_stub(  # noqa: SLF001 - test-only access
+        _POSITION_STUB, "F1.008", "abc123token", _SOURCE
+    )
+
+    details = ComeetAdapter().fetch_job(_SOURCE, stub)
+
+    assert details.description == "About the team\nWe are five.\n\nAdvantages\nDocker."
+    assert details.qualifications == "Python."
+    assert details.responsibilities is None

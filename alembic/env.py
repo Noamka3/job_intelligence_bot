@@ -13,8 +13,10 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # The database URL always comes from Settings (env vars / .env), never from
-# alembic.ini, so there is a single source of truth for it.
-config.set_main_option("sqlalchemy.url", get_settings().database_url)
+# alembic.ini, so there is a single source of truth for it. ConfigParser
+# treats "%" as interpolation syntax, so a URL-encoded password ("p%40ss")
+# has to be escaped or every Alembic command dies in engine_from_config.
+config.set_main_option("sqlalchemy.url", get_settings().database_url.replace("%", "%%"))
 
 target_metadata = Base.metadata
 

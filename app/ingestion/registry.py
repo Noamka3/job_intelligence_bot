@@ -19,3 +19,7 @@ _ADAPTERS: dict[CareerSourceType, JobSourceAdapter] = {
 
 def get_adapter(source_type: CareerSourceType) -> JobSourceAdapter | None:
     return _ADAPTERS.get(source_type)
+
+
+def supported_source_types() -> list[CareerSourceType]:
+    return list(_ADAPTERS)

@@ -25,9 +25,14 @@ def parse_timestamp(value: Any) -> datetime | None:
             return None
 
     try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except ValueError:
         return None
+    # Date-only / offset-less strings (JSON-LD "datePosted": "2024-01-10")
+    # come back naive; everything downstream (timestamptz columns, the
+    # unchanged-check against a stored aware value, recency scoring) does
+    # aware arithmetic and would raise TypeError on a naive one.
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
 
 def first_name(items: list[dict[str, Any]] | None) -> str | None:

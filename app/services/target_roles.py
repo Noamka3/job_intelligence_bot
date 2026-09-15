@@ -6,6 +6,7 @@ even when the current search is narrowly scoped).
 from __future__ import annotations
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.models.target_role import TargetRole
@@ -20,6 +21,19 @@ _EMBEDDING_RELEVANT_FIELDS = frozenset(
 class TargetRoleNotFoundError(LookupError):
     def __init__(self, role_id: int) -> None:
         super().__init__(f"TargetRole {role_id} not found")
+
+
+class TargetRoleAlreadyExistsError(ValueError):
+    def __init__(self, canonical_name: str) -> None:
+        super().__init__(f"A target role named {canonical_name!r} already exists")
+
+
+def _commit_or_conflict(db: Session, canonical_name: str) -> None:
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise TargetRoleAlreadyExistsError(canonical_name) from exc
 
 
 def _build_embedding_text(role: TargetRole) -> str:
@@ -39,7 +53,7 @@ def create_target_role(
     role = TargetRole(**data.model_dump())
     role.embedding = embedding_provider.embed_one(_build_embedding_text(role))
     db.add(role)
-    db.commit()
+    _commit_or_conflict(db, role.canonical_name)
     db.refresh(role)
     return role
 
@@ -58,7 +72,7 @@ def update_target_role(
     if _EMBEDDING_RELEVANT_FIELDS & updates.keys():
         role.embedding = embedding_provider.embed_one(_build_embedding_text(role))
 
-    db.commit()
+    _commit_or_conflict(db, role.canonical_name)
     db.refresh(role)
     return role
 

@@ -82,8 +82,15 @@ def rebuild_profile() -> None:
         profile.structured_profile = structured.model_dump()
         profile.embedding = embedding
         db.commit()
+        # Existing JobMatch rows were computed against the old embedding/
+        # skills - refresh them rather than leave stale scores in
+        # /matches/top until the next crawl happens to touch each job.
+        matches = score_all_active_jobs(db)
 
-        typer.echo(f"Rebuilt profile version {profile.version} (id={profile.id}).")
+        typer.echo(
+            f"Rebuilt profile version {profile.version} (id={profile.id}); "
+            f"rescored active jobs ({matches} matches)."
+        )
 
 
 @app.command("crawl-now")

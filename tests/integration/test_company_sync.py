@@ -23,6 +23,8 @@ _RESOLUTIONS = {
         CareerSourceType.UNSUPPORTED, None, "linkedin_not_scraped"
     ),
     "https://careers.example.com/": ResolvedSource(CareerSourceType.GENERIC_HTML, None),
+    "https://careers.example.com/jobs": ResolvedSource(CareerSourceType.JSONLD, None),
+    "https://jobs.lever.co/acme": ResolvedSource(CareerSourceType.LEVER, "acme"),
 }
 
 
@@ -192,6 +194,123 @@ def test_company_reappearing_is_reenabled(
         select(Company).where(Company.normalized_name == "acme")
     ).scalar_one()
     assert reenabled.enabled is True
+
+
+def _sources_of(db_session: Session, normalized_name: str) -> list[CareerSource]:
+    company = db_session.execute(
+        select(Company).where(Company.normalized_name == normalized_name)
+    ).scalar_one()
+    return list(
+        db_session.execute(
+            select(CareerSource)
+            .where(CareerSource.company_id == company.id)
+            .order_by(CareerSource.id)
+        ).scalars()
+    )
+
+
+def test_same_board_listed_twice_in_one_sync_does_not_abort_the_sync(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The session is autoflush=False: the second row's lookup couldn't
+    see the first row's pending CareerSource, so both were inserted and
+    the unique constraint rolled back the entire sync at commit."""
+    _mock_rows(
+        monkeypatch,
+        [
+            CompanySheetRow(name="Acme", url="https://job-boards.greenhouse.io/acme"),
+            CompanySheetRow(name="Acme", url="https://job-boards.greenhouse.io/acme"),
+        ],
+    )
+
+    result = company_sync.sync_companies_from_sheet(db_session)
+
+    assert result.companies_created == 1
+    assert result.sources_created == 1
+    assert len(_sources_of(db_session, "acme")) == 1
+
+
+def test_source_re_resolving_to_a_better_type_is_updated_in_place(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A probe that timed out on the first sync leaves generic_html; when
+    a later sync sees the JSON-LD markup, the row must switch rather than
+    stay stuck on a type with no adapter forever."""
+    url = "https://careers.example.com/jobs"
+    monkeypatch.setitem(_RESOLUTIONS, url, ResolvedSource(CareerSourceType.GENERIC_HTML, None))
+    _mock_rows(monkeypatch, [CompanySheetRow(name="Acme", url=url)])
+    company_sync.sync_companies_from_sheet(db_session)
+    (source,) = _sources_of(db_session, "acme")
+    assert source.source_type == CareerSourceType.GENERIC_HTML
+
+    monkeypatch.setitem(_RESOLUTIONS, url, ResolvedSource(CareerSourceType.JSONLD, None))
+    result = company_sync.sync_companies_from_sheet(db_session)
+
+    assert result.sources_created == 0
+    (source,) = _sources_of(db_session, "acme")
+    assert source.source_type == CareerSourceType.JSONLD
+    assert source.poll_interval_minutes == 15
+
+    # ...but a *failed* probe on a later sync must never downgrade it back.
+    monkeypatch.setitem(_RESOLUTIONS, url, ResolvedSource(CareerSourceType.GENERIC_HTML, None))
+    company_sync.sync_companies_from_sheet(db_session)
+    (source,) = _sources_of(db_session, "acme")
+    assert source.source_type == CareerSourceType.JSONLD
+
+
+def test_row_pointing_at_a_different_board_retires_the_old_source_and_its_jobs(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.models.enums import JobStatus
+    from app.models.job_posting import JobPosting
+
+    _mock_rows(
+        monkeypatch, [CompanySheetRow(name="Acme", url="https://job-boards.greenhouse.io/acme")]
+    )
+    company_sync.sync_companies_from_sheet(db_session)
+    (old_source,) = _sources_of(db_session, "acme")
+    job = JobPosting(
+        company_id=old_source.company_id,
+        career_source_id=old_source.id,
+        external_job_id="1",
+        title="Engineer",
+        normalized_title="engineer",
+        source_url="https://job-boards.greenhouse.io/acme/jobs/1",
+        content_hash="x" * 64,
+        status=JobStatus.ACTIVE,
+    )
+    db_session.add(job)
+    db_session.commit()
+
+    _mock_rows(monkeypatch, [CompanySheetRow(name="Acme", url="https://jobs.lever.co/acme")])
+    result = company_sync.sync_companies_from_sheet(db_session)
+
+    assert result.sources_created == 1
+    old, new = _sources_of(db_session, "acme")
+    assert old.enabled is False
+    assert new.source_type == CareerSourceType.LEVER
+    assert new.enabled is True
+    db_session.refresh(job)
+    assert job.status == JobStatus.CLOSED  # nothing polls that board any more
+
+
+def test_disabling_a_company_retires_its_sources(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    row = CompanySheetRow(name="Acme", url="https://job-boards.greenhouse.io/acme")
+    _mock_rows(monkeypatch, [row])
+    company_sync.sync_companies_from_sheet(db_session)
+
+    _mock_rows(monkeypatch, [])
+    company_sync.sync_companies_from_sheet(db_session)
+    (source,) = _sources_of(db_session, "acme")
+    assert source.enabled is False
+
+    _mock_rows(monkeypatch, [row])
+    company_sync.sync_companies_from_sheet(db_session)
+    (source,) = _sources_of(db_session, "acme")
+    assert source.enabled is True
+    assert source.next_check_at is None  # crawled again on the next tick
 
 
 def test_failed_sheet_read_touches_nothing(

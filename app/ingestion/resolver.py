@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from urllib.parse import urlparse
+from urllib.parse import ParseResult, parse_qs, urlparse
 
 import httpx
 
@@ -50,30 +50,54 @@ class ResolvedSource:
     unsupported_reason: str | None = None
 
 
-def resolve_career_source(url: str | None) -> ResolvedSource:
+def normalize_source_url(url: str | None) -> str | None:
+    """The URL form actually stored and fetched: trimmed, with a scheme.
+    Sheet cells are often pasted without one ("www.comeet.com/jobs/...")
+    and httpx refuses scheme-less URLs outright, so resolving against a
+    prefixed copy but storing the raw cell would make every later crawl
+    of that source fail.
+    """
     if not url or not url.strip():
+        return None
+    url = url.strip()
+    return url if "://" in url else f"https://{url}"
+
+
+def _hostname_matches(hostname: str, domain: str) -> bool:
+    # Suffix match on label boundaries, not substring: "clever.co" and
+    # "greenhouse.io.example.net" must not resolve as Lever/Greenhouse.
+    return hostname == domain or hostname.endswith("." + domain)
+
+
+def resolve_career_source(url: str | None) -> ResolvedSource:
+    url = normalize_source_url(url)
+    if url is None:
         return ResolvedSource(CareerSourceType.UNSUPPORTED, None, "missing_url")
 
-    url = url.strip()
-    parsed = urlparse(url if "://" in url else f"https://{url}")
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return ResolvedSource(CareerSourceType.UNSUPPORTED, None, "unparseable_url")
     hostname = (parsed.hostname or "").lower()
 
     if not hostname:
         return ResolvedSource(CareerSourceType.UNSUPPORTED, None, "unparseable_url")
 
-    if "linkedin.com" in hostname:
+    if _hostname_matches(hostname, "linkedin.com"):
         return ResolvedSource(CareerSourceType.UNSUPPORTED, None, "linkedin_not_scraped")
 
-    for pattern, source_type in _HOSTNAME_PATTERNS:
-        if pattern in hostname:
-            identifier = _extract_identifier(source_type, hostname, parsed.path)
+    for domain, source_type in _HOSTNAME_PATTERNS:
+        if _hostname_matches(hostname, domain):
+            identifier = _extract_identifier(source_type, hostname, parsed)
             return ResolvedSource(source_type, identifier)
 
     return _probe_page(url)
 
 
-def _extract_identifier(source_type: CareerSourceType, hostname: str, path: str) -> str | None:
-    segments = [segment for segment in path.split("/") if segment]
+def _extract_identifier(
+    source_type: CareerSourceType, hostname: str, parsed: ParseResult
+) -> str | None:
+    segments = [segment for segment in parsed.path.split("/") if segment]
 
     if source_type == CareerSourceType.COMEET:
         # /jobs/{human-readable-slug}/{company_uid} - e.g. /jobs/cymotive/F1.008.
@@ -87,7 +111,15 @@ def _extract_identifier(source_type: CareerSourceType, hostname: str, path: str)
             return segments[2]
         return segments[-1] if segments else None
 
-    if source_type in (CareerSourceType.GREENHOUSE, CareerSourceType.LEVER, CareerSourceType.ASHBY):
+    if source_type == CareerSourceType.GREENHOUSE:
+        # Embedded boards carry the token in a query param, not the path:
+        # boards.greenhouse.io/embed/job_board?for=acme
+        if segments and segments[0] == "embed":
+            for_values = parse_qs(parsed.query).get("for")
+            return for_values[0] if for_values else None
+        return segments[0] if segments else None
+
+    if source_type in (CareerSourceType.LEVER, CareerSourceType.ASHBY):
         return segments[0] if segments else None
 
     if source_type in (CareerSourceType.WORKDAY, CareerSourceType.TALEO):
@@ -104,7 +136,9 @@ def _probe_page(url: str) -> ResolvedSource:
     """
     try:
         body = _fetch_capped(url)
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, httpx.InvalidURL) as exc:
+        # InvalidURL is not an HTTPError subclass - a cell with a stray
+        # newline or bad port would otherwise abort the whole sheet sync.
         logger.info(
             "career source probe failed, defaulting to generic_html",
             extra={"url": url, "error_type": type(exc).__name__},

@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+from pathlib import PurePosixPath, PureWindowsPath
+
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, status
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.schemas.candidate import CandidateProfileRead
-from app.services.candidate.extraction import UnsupportedResumeFormatError
+from app.services.candidate.extraction import UnreadableResumeError, UnsupportedResumeFormatError
 from app.services.candidate.profile_service import (
+    EmptyResumeTextError,
     ProfileNotFoundError,
     activate_profile,
     get_active_profile,
@@ -16,10 +19,41 @@ from app.services.candidate.profile_service import (
 )
 from app.services.embeddings import get_embedding_provider
 from app.services.embeddings.base import EmbeddingProvider
+from app.services.matching.runner import score_all_active_jobs
 
 router = APIRouter(prefix="/candidate", tags=["candidate"])
 
 _MAX_RESUME_BYTES = 10 * 1024 * 1024  # 10 MB
+_READ_CHUNK_BYTES = 1024 * 1024
+_MAX_FILENAME_CHARS = 255  # CandidateProfile.filename column width
+
+
+async def _read_bounded(file: UploadFile) -> bytes:
+    """Reads at most the size limit (+1 byte to detect overflow) instead of
+    buffering an arbitrarily large body before checking it."""
+    chunks: list[bytes] = []
+    total = 0
+    while chunk := await file.read(_READ_CHUNK_BYTES):
+        total += len(chunk)
+        if total > _MAX_RESUME_BYTES:
+            raise HTTPException(
+                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Resume file too large (max 10MB)"
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _safe_filename(raw: str) -> str:
+    # Browsers/clients may send a full path; only the last component is
+    # meaningful, and it must fit the column it's stored in.
+    name = PurePosixPath(PureWindowsPath(raw).as_posix()).name
+    if not name:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Missing filename")
+    if len(name) > _MAX_FILENAME_CHARS:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, f"Filename too long (max {_MAX_FILENAME_CHARS} chars)"
+        )
+    return name
 
 
 @router.post("/resume", response_model=CandidateProfileRead, status_code=status.HTTP_201_CREATED)
@@ -30,12 +64,8 @@ async def upload_resume(
 ) -> CandidateProfileRead:
     if not file.filename:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Missing filename")
-
-    content = await file.read()
-    if len(content) > _MAX_RESUME_BYTES:
-        raise HTTPException(
-            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Resume file too large (max 10MB)"
-        )
+    filename = _safe_filename(file.filename)
+    content = await _read_bounded(file)
 
     try:
         # ingest_resume is synchronous and can be slow (structured
@@ -48,13 +78,16 @@ async def upload_resume(
         profile = await run_in_threadpool(
             ingest_resume,
             db,
-            filename=file.filename,
+            filename=filename,
             content=content,
             embedding_provider=embedding_provider,
         )
-    except UnsupportedResumeFormatError as exc:
+    except (UnsupportedResumeFormatError, UnreadableResumeError, EmptyResumeTextError) as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
+    # A new active profile means every existing match is against the old
+    # CV; rescore now so /matches/top reflects it immediately.
+    await run_in_threadpool(score_all_active_jobs, db)
     return CandidateProfileRead.model_validate(profile)
 
 
@@ -77,4 +110,5 @@ def activate(profile_id: int, db: Session = Depends(get_db)) -> CandidateProfile
         profile = activate_profile(db, profile_id)
     except ProfileNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
+    score_all_active_jobs(db)
     return CandidateProfileRead.model_validate(profile)

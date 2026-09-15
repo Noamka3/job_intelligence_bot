@@ -21,14 +21,15 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.ingestion.resolver import ResolvedSource, resolve_career_source
+from app.ingestion.resolver import ResolvedSource, normalize_source_url, resolve_career_source
 from app.models.career_source import CareerSource
 from app.models.company import Company
-from app.models.enums import CareerSourceType
+from app.models.enums import CareerSourceType, JobStatus
+from app.models.job_posting import JobPosting
 from app.schemas.sync import SheetSyncResult
 from app.services.sheets.excel_reader import read_company_rows_from_excel
 from app.services.sheets.reader import CompanySheetRow, read_company_rows
@@ -103,9 +104,11 @@ def sync_companies(db: Session, rows: list[CompanySheetRow]) -> SheetSyncResult:
             if _apply_company_updates(company, row):
                 updated += 1
 
-        sources_created += _ensure_career_source(db, company, row.url, resolved)
+        sources_created += _ensure_career_source(
+            db, company, normalize_source_url(row.url), resolved
+        )
 
-    disabled = _disable_missing_companies(existing_by_name, seen_normalized_names)
+    disabled = _disable_missing_companies(db, existing_by_name, seen_normalized_names)
 
     db.commit()
 
@@ -147,51 +150,131 @@ def _apply_company_updates(company: Company, row: CompanySheetRow) -> bool:
 def _ensure_career_source(
     db: Session, company: Company, url: str | None, resolved: ResolvedSource
 ) -> int:
+    """Makes the company's CareerSource match what its sheet row resolves
+    to now, and returns 1 if that meant creating a new row.
+
+    Lookup order: (source_type, external_identifier) for a known ATS
+    board - the same board shows up under several URL variants across
+    sheet edits (query params, tracking suffixes; see docs/job_sources.md)
+    and matching on the URL would duplicate it and, later, its jobs -
+    then the exact URL. An existing row is updated in place rather than
+    duplicated when it resolves differently now (a probe that timed out on
+    the first sync left it generic_html; a JSON-LD page later moved to a
+    real ATS), and any other still-enabled source of the company is
+    retired, so one sheet row never keeps two sources crawling.
+    """
     if not url:
         return 0
 
-    query = select(CareerSource).where(CareerSource.company_id == company.id)
+    existing: CareerSource | None = None
     if resolved.external_identifier is not None:
-        # The real unique key for a known ATS board is (source_type,
-        # external_identifier), not the exact URL string: the same board
-        # can appear under multiple URL variants (different query params,
-        # a tracking suffix, ...) across sheet edits. Matching on the
-        # identifier - discovered the hard way, see docs/job_sources.md -
-        # avoids creating a second CareerSource (and therefore duplicate
-        # jobs, once fully crawled) for what both resolve to one board.
-        query = query.where(
-            CareerSource.source_type == resolved.source_type,
-            CareerSource.external_identifier == resolved.external_identifier,
+        existing = db.execute(
+            select(CareerSource).where(
+                CareerSource.company_id == company.id,
+                CareerSource.source_type == resolved.source_type,
+                CareerSource.external_identifier == resolved.external_identifier,
+            )
+        ).scalar_one_or_none()
+    if existing is None:
+        existing = db.execute(
+            select(CareerSource).where(
+                CareerSource.company_id == company.id, CareerSource.source_url == url
+            )
+        ).scalar_one_or_none()
+
+    created = 0
+    if existing is None:
+        existing = CareerSource(
+            company_id=company.id,
+            source_type=resolved.source_type,
+            source_url=url,
+            external_identifier=resolved.external_identifier,
+            unsupported_reason=resolved.unsupported_reason,
+            enabled=resolved.source_type != CareerSourceType.UNSUPPORTED,
+            poll_interval_minutes=_default_poll_minutes(resolved.source_type),
         )
+        db.add(existing)
+        created = 1
     else:
-        query = query.where(CareerSource.source_url == url)
+        _reconcile_existing_source(existing, url, resolved)
 
-    existing = db.execute(query).scalar_one_or_none()
-    if existing is not None:
-        return 0
+    # Flushed so the next row of this same sync can see it: the session
+    # is autoflush=False, and two rows for one board would otherwise both
+    # miss the lookup above and collide on uq_career_sources_company_url
+    # at commit, rolling back the whole sync.
+    db.flush()
 
-    poll_interval = _DEFAULT_POLL_MINUTES.get(
-        resolved.source_type, get_settings().default_poll_minutes
+    others = db.execute(
+        select(CareerSource).where(
+            CareerSource.company_id == company.id,
+            CareerSource.id != existing.id,
+            CareerSource.enabled.is_(True),
+        )
+    ).scalars()
+    for other in others:
+        _retire_source(db, other)
+    return created
+
+
+def _reconcile_existing_source(existing: CareerSource, url: str, resolved: ResolvedSource) -> None:
+    changed_type = existing.source_type != resolved.source_type
+    # A failed probe resolves to generic_html; never let that *downgrade*
+    # a source we already classified better on an earlier, successful
+    # sync - only a hostname-resolved or JSON-LD result can change it.
+    downgrade_to_fallback = (
+        resolved.source_type == CareerSourceType.GENERIC_HTML
+        and existing.source_type != CareerSourceType.UNSUPPORTED
     )
-    source = CareerSource(
-        company_id=company.id,
-        source_type=resolved.source_type,
-        source_url=url,
-        external_identifier=resolved.external_identifier,
-        unsupported_reason=resolved.unsupported_reason,
-        enabled=resolved.source_type != CareerSourceType.UNSUPPORTED,
-        poll_interval_minutes=poll_interval,
+    if changed_type and not downgrade_to_fallback:
+        logger.info(
+            "career source re-resolved",
+            extra={
+                "source_id": existing.id,
+                "from": existing.source_type.value,
+                "to": resolved.source_type.value,
+            },
+        )
+        existing.source_type = resolved.source_type
+        existing.external_identifier = resolved.external_identifier
+        existing.unsupported_reason = resolved.unsupported_reason
+        existing.poll_interval_minutes = _default_poll_minutes(resolved.source_type)
+        existing.consecutive_failures = 0
+        existing.next_check_at = None
+    existing.source_url = url
+    supported = existing.source_type != CareerSourceType.UNSUPPORTED
+    if supported and not existing.enabled:
+        # Retired earlier (company dropped from the sheet, or its row
+        # pointed elsewhere for a while) and back now.
+        existing.enabled = True
+        existing.next_check_at = None
+
+
+def _default_poll_minutes(source_type: CareerSourceType) -> int:
+    return _DEFAULT_POLL_MINUTES.get(source_type, get_settings().default_poll_minutes)
+
+
+def _retire_source(db: Session, source: CareerSource) -> None:
+    """A source that is no longer polled can't vouch for its jobs being
+    open, so they're closed (never deleted - history stays intact, and
+    they reopen normally if the source comes back and lists them again).
+    """
+    source.enabled = False
+    db.execute(
+        update(JobPosting)
+        .where(JobPosting.career_source_id == source.id, JobPosting.status == JobStatus.ACTIVE)
+        .values(status=JobStatus.CLOSED)
     )
-    db.add(source)
-    return 1
 
 
 def _disable_missing_companies(
-    existing_by_name: dict[str, Company], seen_normalized_names: set[str]
+    db: Session, existing_by_name: dict[str, Company], seen_normalized_names: set[str]
 ) -> int:
     disabled = 0
     for normalized_name, company in existing_by_name.items():
         if normalized_name not in seen_normalized_names and company.enabled:
             company.enabled = False
+            for source in company.career_sources:
+                if source.enabled:
+                    _retire_source(db, source)
             disabled += 1
     return disabled

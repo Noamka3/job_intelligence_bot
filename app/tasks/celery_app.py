@@ -9,24 +9,29 @@ README's Celery troubleshooting entry.
 from __future__ import annotations
 
 from celery import Celery
+from celery.signals import worker_process_init
 
 from app.core.config import get_settings
+from app.db.session import dispose_engine_after_fork
 
 settings = get_settings()
 
 celery_app = Celery(
     "job_intel_bot",
     broker=settings.redis_url,
-    backend=settings.redis_url,
     include=["app.tasks.crawlers"],
 )
 
 celery_app.conf.update(
     task_serializer="json",
     accept_content=["json"],
-    result_serializer="json",
     timezone="UTC",
     enable_utc=True,
+    # Nothing reads task return values (Beat fires and forgets; crawl
+    # outcomes live in CrawlRun rows), so don't keep a result per task in
+    # Redis - at 5-minute ticks over ~200 sources that's tens of thousands
+    # of keys a day for nothing.
+    task_ignore_result=True,
     beat_schedule={
         "dispatch-due-sources": {
             "task": "app.tasks.crawlers.dispatch_due_sources",
@@ -34,3 +39,8 @@ celery_app.conf.update(
         },
     },
 )
+
+
+@worker_process_init.connect
+def _reset_db_pool_in_child(**_: object) -> None:
+    dispose_engine_after_fork()

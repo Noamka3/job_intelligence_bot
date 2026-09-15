@@ -74,6 +74,54 @@ def test_extract_min_years_required_various_phrasings() -> None:
     assert extract_min_years_required("no requirement mentioned") is None
 
 
+def test_company_blurb_years_do_not_count_when_a_requirements_section_exists() -> None:
+    """Reproduced on a real Greenhouse-style description: "With over 15
+    years of experience in cybersecurity, Acme..." in the intro made a
+    junior-friendly job read as SENIOR."""
+    description = (
+        "About us\n"
+        "With over 15 years of experience in cybersecurity, Acme protects thousands "
+        "of customers.\n"
+        "Requirements\n"
+        "2+ years of experience with Python\n"
+        "BSc in Computer Science"
+    )
+    assessment = assess_seniority("Backend Developer", description)
+    assert assessment.min_years_required == 2
+    assert assessment.level == SeniorityLevel.JUNIOR
+
+
+def test_implausible_years_are_ignored_even_without_a_section_heading() -> None:
+    text = "With over 20 years in the industry, Acme builds great things."
+    assert extract_min_years_required(text) is None
+
+
+def test_several_requirements_take_the_largest_stated_minimum() -> None:
+    text = "Requirements\n5+ years of backend experience. 1-2 years with Kubernetes is a plus."
+    assert extract_min_years_required(text) == 5
+
+
+def test_spelled_out_numbers_and_apostrophes_are_understood() -> None:
+    assert extract_min_years_required("at least three years of experience") == 3
+    assert extract_min_years_required("3 years' experience in Java") == 3
+    assert extract_min_years_required("more than two years of hands-on experience") == 2
+
+
+def test_software_engineer_digit_one_reads_as_junior() -> None:
+    assert assess_seniority("Software Engineer 1", "").level == SeniorityLevel.JUNIOR
+    assert assess_seniority("Software Engineer 11", "").level != SeniorityLevel.JUNIOR
+
+
+def test_student_and_hebrew_titles_are_recognized() -> None:
+    assert assess_seniority("Student Software Engineer", "").level == SeniorityLevel.JUNIOR
+    assert assess_seniority("Software Developer - Student Position", "").level == (
+        SeniorityLevel.JUNIOR
+    )
+    assert assess_seniority("מפתח/ת Backend בכיר/ה", "").level == SeniorityLevel.SENIOR
+    assert assess_seniority("מפתח/ת Fullstack ג'וניור", "").level == SeniorityLevel.JUNIOR
+    assert assess_seniority("ראש צוות פיתוח", "").level == SeniorityLevel.LEAD
+
+
 def test_score_seniority_penalizes_senior_titles_despite_similarity() -> None:
     assessment = assess_seniority("Senior Backend Engineer", "7+ years")
     score, _ = score_seniority(assessment, max_expected_years=2)

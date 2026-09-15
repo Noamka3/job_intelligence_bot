@@ -37,6 +37,23 @@ def test_positive_keyword_partial_credit() -> None:
     assert 0.5 <= score < 1.0
 
 
+def test_negative_keyword_beats_an_alias_contained_in_the_title() -> None:
+    """"Senior Software Engineer" contains the alias "Software Engineer";
+    the alias used to short-circuit to 1.0 before negatives were checked."""
+    role = _role(aliases=["Software Engineer"], negative_keywords=["senior", "staff"])
+    score, explanation = score_role("Senior Software Engineer", None, role)
+    assert score <= 0.2
+    assert "senior" in explanation
+
+
+def test_keyword_and_alias_matching_is_whole_word() -> None:
+    role = _role(aliases=["Software Engineer"], positive_keywords=["java"])
+    javascript_score, _ = score_role("JavaScript Developer", None, role)
+    assert javascript_score == 0.3  # "java" must not credit "JavaScript"
+    manager_score, _ = score_role("Software Engineering Manager", None, role)
+    assert manager_score < 1.0  # "Software Engineer" must not match "Software Engineering"
+
+
 def test_no_signal_is_low_neutral() -> None:
     score, _ = score_role("Warehouse Associate Driver", None, _role())
     assert score == 0.3

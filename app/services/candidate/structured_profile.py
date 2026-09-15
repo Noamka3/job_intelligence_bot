@@ -13,7 +13,8 @@ from __future__ import annotations
 
 import httpx
 import ollama
-from openai import OpenAI
+from openai import OpenAI, OpenAIError
+from pydantic import ValidationError
 
 from app.core.config import get_settings
 from app.schemas.candidate import StructuredCandidateProfile
@@ -46,6 +47,11 @@ class OllamaUnavailableError(RuntimeError):
         )
 
 
+class OpenAIExtractionError(RuntimeError):
+    def __init__(self, cause: Exception) -> None:
+        super().__init__(f"OpenAI structured extraction failed: {cause}")
+
+
 class OllamaTimeoutError(RuntimeError):
     def __init__(self, timeout_seconds: int) -> None:
         super().__init__(
@@ -76,14 +82,19 @@ def _extract_via_openai(
         raise OpenAINotConfiguredError()
     client = OpenAI(api_key=api_key)
 
-    completion = client.chat.completions.parse(
-        model=model,
-        messages=[
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": normalized_text},
-        ],
-        response_format=StructuredCandidateProfile,
-    )
+    try:
+        completion = client.chat.completions.parse(
+            model=model,
+            messages=[
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": normalized_text},
+            ],
+            response_format=StructuredCandidateProfile,
+        )
+    except (OpenAIError, ValidationError) as exc:
+        # Bad key, rate limit, network, or a response that didn't fit the
+        # schema - all secondary to the upload itself (spec §6).
+        raise OpenAIExtractionError(exc) from exc
     parsed = completion.choices[0].message.parsed
     if parsed is None:
         return StructuredCandidateProfile()
@@ -112,4 +123,10 @@ def _extract_via_ollama(
     content = response.message.content
     if not content:
         return StructuredCandidateProfile()
-    return StructuredCandidateProfile.model_validate_json(content)
+    try:
+        return StructuredCandidateProfile.model_validate_json(content)
+    except ValidationError as exc:
+        # Schema-constrained output is best effort on the model's side: a
+        # small local model can still emit a wrong type or truncated JSON.
+        # This step is secondary (spec §6) and must never sink the upload.
+        raise OllamaUnavailableError(base_url, exc) from exc

@@ -38,6 +38,9 @@ class CrawlRun(Base):
     jobs_created: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     jobs_updated: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     jobs_closed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # Jobs listed by the source whose detail fetch/embed failed and were
+    # skipped for this run (the run itself still succeeds unless all did).
+    jobs_failed: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
     error_type: Mapped[str | None] = mapped_column(String(255))
     error_message: Mapped[str | None] = mapped_column(Text)

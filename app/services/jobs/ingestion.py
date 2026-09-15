@@ -11,6 +11,7 @@ callable from the CLI/API and from the Celery tasks in app/tasks/
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import timedelta
 
 from sqlalchemy import select
@@ -18,9 +19,10 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.timezone import utc_now
-from app.ingestion.adapters.base import JobStub
-from app.ingestion.registry import get_adapter
+from app.ingestion.adapters.base import JobDetails, JobSourceAdapter, JobStub
+from app.ingestion.registry import get_adapter, supported_source_types
 from app.models.career_source import CareerSource
+from app.models.company import Company
 from app.models.crawl_run import CrawlRun
 from app.models.enums import CrawlRunStatus, JobStatus
 from app.models.job_posting import JobPosting
@@ -40,14 +42,28 @@ logger = logging.getLogger(__name__)
 
 def get_due_sources(db: Session) -> list[CareerSource]:
     """Enabled sources that have never been crawled, or are past their own
-    next_check_at - the dispatch query Celery Beat will use every 5
-    minutes from Phase 6 onward (spec §19), reused here so the CLI/API
-    manual trigger behaves identically.
+    next_check_at - the dispatch query Celery Beat uses every 5 minutes
+    (spec §19), reused by the CLI/API manual trigger so it behaves
+    identically.
+
+    Source types without a registered adapter yet (workday, generic_html,
+    ... until Phase 8) are left out on purpose: crawling them would only
+    write a FAILED "NoAdapter" CrawlRun per tick and push their
+    next_check_at out with exponential backoff - so once the adapter does
+    land, they'd sit out up to a day before the first real crawl. Skipping
+    them here keeps their next_check_at untouched, so they're picked up on
+    the first tick after the adapter is registered.
     """
     now = utc_now()
-    query = select(CareerSource).where(
-        CareerSource.enabled.is_(True),
-        (CareerSource.next_check_at.is_(None)) | (CareerSource.next_check_at <= now),
+    query = (
+        select(CareerSource)
+        .join(Company, CareerSource.company_id == Company.id)
+        .where(
+            Company.enabled.is_(True),
+            CareerSource.enabled.is_(True),
+            CareerSource.source_type.in_(supported_source_types()),
+            (CareerSource.next_check_at.is_(None)) | (CareerSource.next_check_at <= now),
+        )
     )
     return list(db.execute(query).scalars())
 
@@ -81,31 +97,54 @@ def crawl_source(
     }
 
     seen_external_ids: set[str] = set()
-    created = updated = closed = 0
+    created = updated = attempted = failed = 0
 
     for stub in stubs:
         seen_external_ids.add(stub.external_job_id)
         existing = existing_jobs.get(stub.external_job_id)
 
+        if existing is not None:
+            existing.last_seen_at = utc_now()
+            existing.missing_streak = 0
+            existing.status = JobStatus.ACTIVE
+            if _is_definitely_unchanged(existing, stub):
+                continue
+
+        attempted += 1
+        try:
+            fetched = _fetch_and_embed(adapter, source, stub, existing, embedding_provider)
+        except Exception as exc:  # noqa: BLE001 - one broken job must not sink the rest of the listing (spec §34)
+            logger.warning(
+                "skipping job: fetch/embed failed",
+                extra={
+                    "source_id": source.id,
+                    "external_job_id": stub.external_job_id,
+                    "error_type": type(exc).__name__,
+                },
+            )
+            failed += 1
+            continue
+
         if existing is None:
-            new_job = _ingest_new_job(db, source, stub, embedding_provider)
+            new_job = _create_job(db, source, fetched)
             existing_jobs[stub.external_job_id] = new_job
             created += 1
             score_job(db, new_job)
-            continue
-
-        existing.last_seen_at = utc_now()
-        existing.missing_streak = 0
-        existing.status = JobStatus.ACTIVE
-
-        if _is_definitely_unchanged(existing, stub):
-            continue
-        if _refresh_existing_job(db, source, stub, existing, embedding_provider):
+        elif _apply_update(existing, fetched):
             updated += 1
             # Only rescore when the content actually changed enough to
-            # re-embed (spec §45: never re-run matching on unchanged
-            # jobs) - _refresh_existing_job already made that call.
+            # re-embed (spec §45: never re-run matching on unchanged jobs).
             score_job(db, existing)
+
+    if attempted and failed == attempted:
+        # Every detail fetch failing means the site/adapter is broken, not
+        # one stale listing entry - treat it like a failed listing call so
+        # the source backs off, and don't close anything based on it.
+        run.jobs_seen = len(stubs)
+        run.jobs_failed = failed
+        return _fail_run(
+            db, run, source, "AllJobsFailed", f"all {failed} job detail fetches failed"
+        )
 
     closed = _close_missing_jobs(existing_jobs, seen_external_ids)
 
@@ -120,19 +159,44 @@ def crawl_source(
     run.jobs_created = created
     run.jobs_updated = updated
     run.jobs_closed = closed
+    run.jobs_failed = failed
 
     db.commit()
     return run
 
 
-def _ingest_new_job(
-    db: Session, source: CareerSource, stub: JobStub, embedding_provider: EmbeddingProvider
-) -> JobPosting:
-    adapter = get_adapter(source.source_type)
-    assert adapter is not None  # already checked by the caller
-    details = adapter.fetch_job(source, stub)
+@dataclass(frozen=True)
+class _FetchedJob:
+    details: JobDetails
+    content_hash: str
+    # None when the content hash matches the existing row - nothing to
+    # re-embed, only metadata to refresh.
+    embedding: list[float] | None
 
+
+def _fetch_and_embed(
+    adapter: JobSourceAdapter,
+    source: CareerSource,
+    stub: JobStub,
+    existing: JobPosting | None,
+    embedding_provider: EmbeddingProvider,
+) -> _FetchedJob:
+    """All of one job's network + model work, done before any ORM
+    mutation - so a fetch that 404s (job pulled between the list call and
+    now) or an embedding failure leaves the existing row exactly as it was
+    instead of half-updated with a stale embedding.
+    """
+    details = adapter.fetch_job(source, stub)
     embedding_text = build_embedding_text(details)
+    content_hash = content_hash_for(embedding_text)
+    if existing is not None and content_hash == existing.content_hash:
+        return _FetchedJob(details, content_hash, None)
+    return _FetchedJob(details, content_hash, embedding_provider.embed_one(embedding_text))
+
+
+def _create_job(db: Session, source: CareerSource, fetched: _FetchedJob) -> JobPosting:
+    details = fetched.details
+    assert fetched.embedding is not None  # a new job never has an existing hash to match
     job = JobPosting(
         company_id=source.company_id,
         career_source_id=source.id,
@@ -157,8 +221,8 @@ def _ingest_new_job(
         source_published_at=details.source_published_at,
         source_updated_at=details.source_updated_at,
         status=JobStatus.ACTIVE,
-        content_hash=content_hash_for(embedding_text),
-        embedding=embedding_provider.embed_one(embedding_text),
+        content_hash=fetched.content_hash,
+        embedding=fetched.embedding,
     )
     db.add(job)
     db.flush()
@@ -175,19 +239,9 @@ def _is_definitely_unchanged(existing: JobPosting, stub: JobStub) -> bool:
     return stub.source_updated_at <= existing.source_updated_at
 
 
-def _refresh_existing_job(
-    db: Session,
-    source: CareerSource,
-    stub: JobStub,
-    existing: JobPosting,
-    embedding_provider: EmbeddingProvider,
-) -> bool:
-    adapter = get_adapter(source.source_type)
-    assert adapter is not None
-    details = adapter.fetch_job(source, stub)
-    embedding_text = build_embedding_text(details)
-    new_hash = content_hash_for(embedding_text)
-
+def _apply_update(existing: JobPosting, fetched: _FetchedJob) -> bool:
+    """Returns True when the job's content changed enough to re-embed."""
+    details = fetched.details
     existing.title = details.title
     existing.normalized_title = normalize_job_title(details.title)
     existing.department = details.department
@@ -208,11 +262,11 @@ def _refresh_existing_job(
     existing.source_published_at = details.source_published_at
     existing.source_updated_at = details.source_updated_at
 
-    if new_hash == existing.content_hash:
+    if fetched.embedding is None:
         return False
 
-    existing.embedding = embedding_provider.embed_one(embedding_text)
-    existing.content_hash = new_hash
+    existing.embedding = fetched.embedding
+    existing.content_hash = fetched.content_hash
     return True
 
 

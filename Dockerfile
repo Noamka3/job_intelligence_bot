@@ -22,5 +22,15 @@ COPY app ./app
 
 RUN pip install --no-cache-dir -e .
 
+# Nothing here needs root at runtime (Celery warns loudly if it gets it).
+# The model cache dir is created *as this user* so a fresh named volume
+# mounted there inherits writable ownership - Docker copies the mount
+# point's ownership into a new volume, and a root-owned one would make
+# the first model download fail with EACCES.
+RUN useradd --create-home --uid 1000 app
+USER app
+ENV FASTEMBED_CACHE_PATH=/home/app/.cache/fastembed
+RUN mkdir -p /home/app/.cache/fastembed
+
 # No CMD: docker-compose.yml's worker/beat services each set their own
 # `command` (celery worker vs. celery beat) from this same image.

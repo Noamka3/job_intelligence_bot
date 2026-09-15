@@ -242,3 +242,18 @@ def downgrade() -> None:
     op.drop_index('uq_candidate_profiles_single_active', table_name='candidate_profiles', postgresql_where=sa.text('is_active'))
     op.drop_table('candidate_profiles')
     # ### end Alembic commands ###
+
+    # drop_table doesn't drop the Postgres ENUM types the columns used;
+    # without this, `downgrade base` followed by `upgrade head` fails with
+    # 'type "career_source_type" already exists'.
+    for enum_name in (
+        "career_source_type",
+        "crawl_run_status",
+        "remote_type",
+        "employment_type",
+        "seniority_level",
+        "job_status",
+        "job_feedback_action",
+        "notification_channel",
+    ):
+        op.execute(f"DROP TYPE IF EXISTS {enum_name}")

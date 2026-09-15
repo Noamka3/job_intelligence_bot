@@ -24,8 +24,10 @@ class LocalEmbeddingProvider:
     The default provider (spec's suggested OpenAI default was swapped for
     this one at the user's request to avoid any per-embedding cost - see
     docs/architecture.md). First construction downloads and caches the
-    model (~220MB for the default multilingual MiniLM model) under
-    ~/.cache/fastembed/; later runs reuse that cache.
+    model (~240MB for the default multilingual MiniLM model) under
+    $FASTEMBED_CACHE_PATH, or <system temp dir>/fastembed_cache when that
+    isn't set (fastembed's own default - not ~/.cache); later runs reuse
+    that cache.
 
     Observed in development: this machine's antivirus real-time scanning
     occasionally collides with ONNX Runtime's memory allocation for the

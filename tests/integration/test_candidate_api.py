@@ -58,6 +58,43 @@ def test_upload_resume_rejects_unsupported_extension(api_client: TestClient) -> 
     assert response.status_code == 400
 
 
+def test_upload_rejects_a_corrupt_pdf_with_400_not_500(api_client: TestClient) -> None:
+    response = api_client.post(
+        "/candidate/resume",
+        files={"file": ("cv.pdf", b"this is not a pdf at all", "application/pdf")},
+    )
+    assert response.status_code == 400
+    assert "Could not read" in response.json()["detail"]
+
+
+def test_upload_rejects_a_pdf_with_no_extractable_text(api_client: TestClient) -> None:
+    """An image-only/blank PDF used to be accepted and *activated*,
+    silently replacing the working profile with one embedded from ""."""
+    from pypdf import PdfWriter
+
+    writer = PdfWriter()
+    writer.add_blank_page(width=200, height=200)
+    buffer = io.BytesIO()
+    writer.write(buffer)
+
+    response = api_client.post(
+        "/candidate/resume", files={"file": ("scan.pdf", buffer.getvalue(), "application/pdf")}
+    )
+    assert response.status_code == 400
+    assert "No text could be extracted" in response.json()["detail"]
+    assert api_client.get("/candidate/active").status_code == 404
+
+
+def test_upload_uses_only_the_basename_of_a_client_supplied_path(api_client: TestClient) -> None:
+    content = _docx_bytes("Jane Doe - Junior Software Engineer")
+    client_path = "C:\\Users\\jane\\Documents\\cv.docx"
+    response = api_client.post(
+        "/candidate/resume", files={"file": (client_path, content, "application/octet-stream")}
+    )
+    assert response.status_code == 201
+    assert response.json()["filename"] == "cv.docx"
+
+
 def test_active_profile_returns_404_when_none_exists(api_client: TestClient) -> None:
     response = api_client.get("/candidate/active")
     assert response.status_code == 404

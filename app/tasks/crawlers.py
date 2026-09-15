@@ -7,7 +7,9 @@ functions that are already independently testable without Celery.
 from __future__ import annotations
 
 import logging
+from datetime import timedelta
 
+from app.core.timezone import utc_now
 from app.db.session import get_session_factory
 from app.models.career_source import CareerSource
 from app.services.embeddings import get_embedding_provider
@@ -28,6 +30,21 @@ def dispatch_due_sources() -> int:
     session_factory = get_session_factory()
     with session_factory() as db:
         sources = get_due_sources(db)
+        # Lease every source for one poll interval *before* enqueueing.
+        # With a long queue (bootstrap, a fresh sheet sync) the next Beat
+        # tick fires before the worker reaches the tail, and would
+        # otherwise re-enqueue everything still waiting - two workers then
+        # crawl the same source at once and collide on
+        # uq_job_postings_source_external_id. crawl_source overwrites the
+        # lease with the real next_check_at when it finishes; if a task is
+        # lost (worker killed), the source just becomes due again one
+        # interval later. Committed first so a worker that finishes before
+        # this loop does can't have its result clobbered by the lease.
+        now = utc_now()
+        for source in sources:
+            source.next_check_at = now + timedelta(minutes=source.poll_interval_minutes)
+        db.commit()
+
         for source in sources:
             crawl_one_source.delay(source.id)
         logger.info("dispatched due sources", extra={"source_count": len(sources)})
@@ -69,5 +86,6 @@ def crawl_one_source(source_id: int) -> None:
                 "jobs_created": run.jobs_created,
                 "jobs_updated": run.jobs_updated,
                 "jobs_closed": run.jobs_closed,
+                "jobs_failed": run.jobs_failed,
             },
         )

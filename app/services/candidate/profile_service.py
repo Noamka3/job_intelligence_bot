@@ -20,6 +20,7 @@ from app.services.candidate.normalization import normalize_text
 from app.services.candidate.structured_profile import (
     OllamaTimeoutError,
     OllamaUnavailableError,
+    OpenAIExtractionError,
     OpenAINotConfiguredError,
     extract_structured_profile,
 )
@@ -31,6 +32,14 @@ logger = logging.getLogger(__name__)
 class ProfileNotFoundError(LookupError):
     def __init__(self, profile_id: int) -> None:
         super().__init__(f"CandidateProfile {profile_id} not found")
+
+
+class EmptyResumeTextError(ValueError):
+    def __init__(self, filename: str) -> None:
+        super().__init__(
+            f"No text could be extracted from {filename!r} - a scanned/image-only PDF? "
+            "Upload a text-based PDF or a .docx."
+        )
 
 
 def ingest_resume(
@@ -56,6 +65,11 @@ def ingest_resume(
 
     raw_text = extract_text(filename, content)
     normalized_text = normalize_text(raw_text)
+    if not normalized_text.strip():
+        # An image-only PDF parses "successfully" to nothing. Activating a
+        # profile embedded from an empty string would silently make every
+        # match meaningless and deactivate the working one.
+        raise EmptyResumeTextError(filename)
     structured = _extract_structured_profile_best_effort(normalized_text)
     embedding = embedding_provider.embed_one(normalized_text)
 
@@ -122,7 +136,12 @@ def _extract_structured_profile_best_effort(normalized_text: str) -> StructuredC
     """
     try:
         return extract_structured_profile(normalized_text)
-    except (OpenAINotConfiguredError, OllamaUnavailableError, OllamaTimeoutError) as exc:
+    except (
+        OpenAINotConfiguredError,
+        OpenAIExtractionError,
+        OllamaUnavailableError,
+        OllamaTimeoutError,
+    ) as exc:
         logger.warning(
             "structured CV extraction failed, saving resume without it",
             extra={"error_type": type(exc).__name__, "error": str(exc)},

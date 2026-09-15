@@ -46,16 +46,18 @@ class JsonLdAdapter:
     @staticmethod
     def _to_stub(posting: dict[str, Any], source: CareerSource) -> JobStub:
         title = str(posting.get("title") or "")
-        job_url = _extract_url(posting) or source.source_url
+        job_url = _extract_url(posting)
+        location_text = _extract_location_text(posting)
         return JobStub(
-            external_job_id=_extract_identifier(posting, title, job_url),
+            external_job_id=_extract_identifier(posting, title, job_url, location_text),
             title=title,
-            location_text=_extract_location_text(posting),
-            source_url=job_url,
-            apply_url=job_url,
-            source_updated_at=parse_timestamp(
-                posting.get("dateModified") or posting.get("datePosted")
-            ),
+            location_text=location_text,
+            source_url=job_url or source.source_url,
+            apply_url=job_url or source.source_url,
+            # Only a real dateModified counts as "updated at": datePosted
+            # never moves after an edit, so using it here would make every
+            # later change to the posting invisible to the crawler.
+            source_updated_at=parse_timestamp(posting.get("dateModified")),
             raw=posting,
         )
 
@@ -70,9 +72,7 @@ class JsonLdAdapter:
             source_url=stub.source_url,
             apply_url=stub.apply_url,
             source_published_at=parse_timestamp(posting.get("datePosted")),
-            source_updated_at=parse_timestamp(
-                posting.get("dateModified") or posting.get("datePosted")
-            ),
+            source_updated_at=parse_timestamp(posting.get("dateModified")),
         )
 
 
@@ -123,7 +123,9 @@ def _extract_url(posting: dict[str, Any]) -> str | None:
     return None
 
 
-def _extract_identifier(posting: dict[str, Any], title: str, url: str) -> str:
+def _extract_identifier(
+    posting: dict[str, Any], title: str, url: str | None, location_text: str | None
+) -> str:
     identifier = posting.get("identifier")
     if isinstance(identifier, dict):
         value = identifier.get("value")
@@ -131,7 +133,11 @@ def _extract_identifier(posting: dict[str, Any], title: str, url: str) -> str:
             return str(value)
     if isinstance(identifier, str) and identifier:
         return identifier
-    seed = url or title
+    # No identifier and no per-job URL: hash what still distinguishes
+    # postings on one page (title + location). Hashing the shared page URL
+    # instead would give every such posting the same id, silently
+    # collapsing them into one row.
+    seed = url or f"{title}|{location_text or ''}"
     return hashlib.sha256(seed.encode("utf-8")).hexdigest()[:32]
 
 
@@ -145,14 +151,25 @@ def _extract_location_text(posting: dict[str, Any]) -> str | None:
             parts = [
                 address.get("addressLocality"),
                 address.get("addressRegion"),
-                address.get("addressCountry"),
+                _schema_name(address.get("addressCountry")),
             ]
             text = ", ".join(str(p) for p in parts if p)
             if text:
                 return text
+        elif isinstance(address, str) and address.strip():
+            return address.strip()
     if posting.get("jobLocationType") == "TELECOMMUTE":
         return "Remote"
     return None
+
+
+def _schema_name(value: Any) -> str | None:
+    """schema.org lets a Country be a plain string or an object
+    ({"@type": "Country", "name": "Israel"}) - both are common."""
+    if isinstance(value, dict):
+        name = value.get("name")
+        return str(name) if name else None
+    return str(value) if value else None
 
 
 def _map_employment_type(value: Any) -> EmploymentType:

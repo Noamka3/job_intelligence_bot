@@ -60,7 +60,11 @@ services:
       REDIS_URL: redis://redis:6379/0
       EMBEDDING_PROVIDER: local
     volumes:
-      - fastembed_cache:/root/.cache
+      # Must match FASTEMBED_CACHE_PATH in the Dockerfile - fastembed
+      # caches under <system temp>/fastembed_cache by default, not
+      # ~/.cache, so a mount anywhere else silently re-downloads the
+      # ~240MB model on every container recreate.
+      - fastembed_cache:/home/app/.cache/fastembed
     depends_on:
       postgres:
         condition: service_healthy
@@ -71,7 +75,10 @@ services:
     build: .
     container_name: job_bot_beat
     restart: unless-stopped
-    command: celery -A app.tasks.celery_app beat --loglevel=info
+    # --schedule: beat persists its state file next to wherever it runs
+    # (/app, root-owned in the image) unless told otherwise; the image
+    # runs as a non-root user.
+    command: celery -A app.tasks.celery_app beat --loglevel=info --schedule=/home/app/celerybeat-schedule
     environment:
       DATABASE_URL: postgresql+psycopg://job_bot:job_bot@postgres:5432/job_bot
       REDIS_URL: redis://redis:6379/0

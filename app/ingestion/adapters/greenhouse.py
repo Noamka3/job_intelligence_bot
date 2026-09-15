@@ -8,6 +8,7 @@ No authentication required for reads.
 
 from __future__ import annotations
 
+import html
 from typing import Any
 
 from app.ingestion.adapters._http import get_json
@@ -53,7 +54,11 @@ class GreenhouseAdapter:
             title=data.get("title", stub.title),
             department=first_name(data.get("departments")),
             location_text=(data.get("location") or {}).get("name") or stub.location_text,
-            description=html_to_text(data.get("content")),
+            # `content` is HTML that Greenhouse additionally entity-escapes
+            # ("&lt;div&gt;..."); verified live against a real board. Without
+            # unescaping first, the markup survives as literal text in the
+            # description and gets embedded as noise.
+            description=html_to_text(html.unescape(data.get("content") or "")),
             source_url=data.get("absolute_url") or stub.source_url,
             apply_url=data.get("absolute_url") or stub.apply_url,
             source_updated_at=parse_timestamp(data.get("updated_at")),
