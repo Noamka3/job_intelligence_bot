@@ -29,6 +29,7 @@ dependencies = [
     "fastembed>=0.4",
     "openpyxl>=3.1",
     "ollama>=0.4",
+    "celery>=5.4",
 ]
 
 [project.optional-dependencies]
@@ -81,6 +82,16 @@ ignore_missing_imports = true
 # onnxruntime's C-extension internals ship no stubs/py.typed marker.
 module = "onnxruntime.capi.*"
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# celery ships no py.typed marker; its @task decorator is consequently
+# untyped, which would otherwise make every task function untyped too.
+module = "celery.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "app.tasks.*"
+disallow_untyped_decorators = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -6,21 +6,31 @@ CV and configurable target roles using hybrid (semantic + rule-based)
 scoring, and notifies via WhatsApp. See `docs/architecture.md` for the
 full design and `docs/job_sources.md` for verified ATS API formats.
 
-**Status: Phase 5 (hybrid matching) complete and verified end-to-end**, on
-top of Phases 1-4. All 240 real companies from the sheet are imported;
+**Status: Phase 6 (automatic scheduling) complete and verified end-to-end**,
+on top of Phases 1-5. All 240 real companies from the sheet are imported;
 Greenhouse/Comeet/JSON-LD adapters discover jobs incrementally (new jobs
 get fetched/embedded, unchanged jobs skipped cheaply, missing jobs closed
 after several consecutive crawls, never deleted). The matching engine
 (`app/services/matching/`) combines semantic similarity, skill matching,
 title/role matching, seniority detection, location, and recency into one
-0-100 score with human-readable reasons/concerns - verified against a
-real uploaded CV + a real "Junior Software Engineer" target role scored
-against all 170 real discovered jobs (`python -m app.cli score-all`,
-`GET /matches/top`). See `docs/matching.md` for the design, including a
-real empirical finding: the default weights had to be rebalanced well
-away from the spec's suggested starting point, because raw semantic
-similarity barely distinguishes "Junior" from "Senior" versions of the
-same role.
+0-100 score with human-readable reasons/concerns, and now runs
+automatically right after ingestion (`app/services/jobs/ingestion.py`
+calls `score_job` for every new/changed job - no separate manual step) -
+verified against a real uploaded CV + a real "Junior Software Engineer"
+target role scored against all 170 real discovered jobs. See
+`docs/matching.md` for the design, including a real empirical finding:
+the default weights had to be rebalanced well away from the spec's
+suggested starting point, because raw semantic similarity barely
+distinguishes "Junior" from "Senior" versions of the same role.
+
+A Celery worker + beat scheduler (`app/tasks/`, running in Docker - see
+"Running the scheduler" below) now dispatch every due `CareerSource`
+automatically on a 5-minute timer (`DEFAULT_POLL_MINUTES`), the same code
+path as `crawl-now`/`POST /operations/crawl-now`. Verified live: manually
+triggered a real dispatch of all 210 then-due sources against the running
+worker container and inspected the resulting `CrawlRun` rows in Postgres -
+found and fixed a real bug in the process, see the "Celery worker runs out
+of memory" troubleshooting entry below.
 
 Embeddings default to a **free local model** (`EMBEDDING_PROVIDER=local`,
 see `app/services/embeddings/local_provider.py`) - no API key needed for
@@ -42,9 +52,8 @@ reliable for this one feature.
 Israel-only job filtering (`GET /jobs` defaults to `israel_only=true`) is
 in per user request - see `app/services/jobs/location.py`.
 
-No automatic scheduling (Phase 6) or WhatsApp notifications (Phase 7)
-yet - matching currently has to be triggered explicitly
-(`score-all`/`GET /matches/top`), not run automatically after each crawl.
+No WhatsApp notifications yet (Phase 7) - new high-scoring matches sit in
+`JobMatch`/`GET /matches/top` until you check.
 
 ## Prerequisites
 
@@ -121,6 +130,29 @@ account - never your own Google login.
    enough. Without this step every sync call fails with a permissions
    error, since the service account has no access of its own.
 
+## Running the scheduler (Phase 6)
+
+The worker + beat scheduler run in Docker (Celery's prefork pool doesn't
+work on native Windows - see the troubleshooting entry below), sharing the
+same image as each other (`Dockerfile`) but not the FastAPI app, which
+still runs directly on the Windows host during development.
+
+```bash
+docker compose up -d --build worker beat
+# beat fires dispatch_due_sources every DEFAULT_POLL_MINUTES (5 by
+# default); it fans out crawl_one_source per due CareerSource, which is
+# the same crawl_source()+score_job() call crawl-now/POST
+# /operations/crawl-now make - just dispatched automatically instead of
+# triggered manually.
+
+docker logs -f job_bot_worker   # watch crawls happen live
+docker logs -f job_bot_beat     # watch the 5-minute dispatch tick
+```
+
+If you're on a machine with a TLS-inspecting antivirus (see the pip/SSL
+troubleshooting entries below), building `worker`/`beat` needs the same
+CA cert workaround as the host - see `certs/README.md`.
+
 ## Running tests
 
 Integration tests need Postgres/Redis running (`docker compose up -d
@@ -193,6 +225,34 @@ inside Docker (Linux) containers, not directly on the Windows host -
 Postgres and Redis already run this way, so this is consistent rather than
 an extra step.
 
+**`docker compose build worker`/`beat` fails with `CERTIFICATE_VERIFY_FAILED`
+during `pip install`.** Same root cause as the host-side pip issue below -
+Docker Desktop's container network traffic goes through the same
+TLS-inspecting antivirus. Fixed via `certs/` (see `certs/README.md`) -
+the Dockerfile installs whatever CA certs are dropped there into the
+image's trust store and points `PIP_CERT`/`SSL_CERT_FILE` at it, since pip
+vendors its own certifi bundle and ignores the system store otherwise.
+
+**Celery worker runs out of memory and SIGKILLs its own child processes
+under a large batch of due sources.** Found during Phase 6 live
+verification: manually dispatching all 210 then-due `CareerSource` rows
+at once against the default worker concurrency (one prefork process per
+CPU core - 8 on this dev machine) produced 250+ `SIGKILL`/
+`WorkerLostError` events and `OperationalError: ... Temporary failure in
+name resolution` connecting to Redis, because each worker process loads
+its *own* independent copy of the local embedding model
+(`app/services/embeddings` caches it per-process via `@lru_cache`, not
+shared across forks) - 8 concurrent model loads exceeded the ~3.75GB total
+RAM of this machine's Docker Desktop/WSL2 VM. `docker-compose.yml` now
+pins the worker to `--concurrency=2`, which was reverified clean (0
+SIGKILLs, ~360MB peak) against a smaller real due batch. This was a
+one-time bootstrap-scale event, not a permanent steady-state problem (most
+of those 210 sources are `generic_html`/`workday`/`taleo`, which have no
+adapter yet - Phase 8 - and back off exponentially after each failed
+attempt, capped at 24h), but a fresh company sync or a new adapter could
+reintroduce a large due batch, so the concurrency cap stays as a
+permanent safeguard rather than a one-off fix.
+
 **Any real HTTPS call crashes the process with `OPENSSL_Uplink(...): no
 OPENSSL_Applink`** (e.g. running tests that hit `httpx`, or the Google
 Sheets sync). This machine's antivirus (Avast) sets the environment
@@ -253,8 +313,11 @@ curl http://127.0.0.1:8000/jobs/1
 
 `POST /operations/crawl-now` runs every due source synchronously inside
 the request - fine for a handful of sources during development, but it
-will be slow with many. Phase 6 replaces the "runs on a timer" part with
-Celery Beat dispatching to a worker instead of blocking one HTTP call.
+will be slow with many. Since Phase 6, Celery Beat dispatches the same
+`crawl_source()` call to a worker automatically every 5 minutes (see
+"Running the scheduler" above) - `crawl-now`/`POST /operations/crawl-now`
+are still there for an on-demand manual trigger (e.g. right after a fresh
+company sync).
 
 ## API (Phase 5)
 
@@ -272,10 +335,12 @@ curl -X POST http://127.0.0.1:8000/jobs/1/feedback \
   -H "Content-Type: application/json" -d '{"action": "interested"}'
 ```
 
-Matching isn't wired into the crawl pipeline yet - run `score-all` after
-crawling/uploading a new CV to refresh `JobMatch` rows. See
-`docs/matching.md` for how the seven component scores combine, and why
-the weights differ from the spec's suggested starting point. Known
+Since Phase 6, every new/changed job is scored automatically right after
+ingestion - `score-all` is now mainly useful after uploading a *new* CV or
+adding a target role, to backfill scores against jobs that were already in
+the database. See `docs/matching.md` for how the seven component scores
+combine, and why the weights differ from the spec's suggested starting
+point. Known
 limitation found during live testing: a job in a clearly different field
 (e.g. "Junior Customer Support") can still rank surprisingly high purely
 from a matching seniority signal + a couple of generic skill overlaps

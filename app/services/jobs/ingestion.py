@@ -1,8 +1,11 @@
 """Crawls one CareerSource: discovers new / changed / missing jobs and
-persists them. This is the core loop spec §20 (incremental ingestion),
-§23 (closure detection), and §33 (observability via CrawlRun) describe -
-plain business logic, callable from the CLI now and from a Celery task
-body later (Phase 6) without change.
+persists them, scoring each new/changed job against the active candidate
+profile right away (Phase 5's matching engine - cheap, no LLM calls, so
+there's no reason to defer it to a separate manual step). This is the
+core loop spec §20 (incremental ingestion), §23 (closure detection), and
+§33 (observability via CrawlRun) describe - plain business logic,
+callable from the CLI/API and from the Celery tasks in app/tasks/
+(Phase 6) without change.
 """
 
 from __future__ import annotations
@@ -30,6 +33,7 @@ from app.services.jobs.normalization import (
     normalize_job_title,
     normalize_location,
 )
+from app.services.matching.runner import score_job
 
 logger = logging.getLogger(__name__)
 
@@ -84,10 +88,10 @@ def crawl_source(
         existing = existing_jobs.get(stub.external_job_id)
 
         if existing is None:
-            existing_jobs[stub.external_job_id] = _ingest_new_job(
-                db, source, stub, embedding_provider
-            )
+            new_job = _ingest_new_job(db, source, stub, embedding_provider)
+            existing_jobs[stub.external_job_id] = new_job
             created += 1
+            score_job(db, new_job)
             continue
 
         existing.last_seen_at = utc_now()
@@ -98,6 +102,10 @@ def crawl_source(
             continue
         if _refresh_existing_job(db, source, stub, existing, embedding_provider):
             updated += 1
+            # Only rescore when the content actually changed enough to
+            # re-embed (spec §45: never re-run matching on unchanged
+            # jobs) - _refresh_existing_job already made that call.
+            score_job(db, existing)
 
     closed = _close_missing_jobs(existing_jobs, seen_external_ids)
 

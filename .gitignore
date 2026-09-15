@@ -7,6 +7,9 @@ google-service-account*.json
 secrets/
 *.pem
 *.key
+# Machine-specific CA certs the Docker build may install (see certs/README.md)
+certs/*.crt
+certs/*.pem
 
 # Resume files / user data (never committed)
 data/

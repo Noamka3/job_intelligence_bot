@@ -36,6 +36,52 @@ services:
       timeout: 5s
       retries: 10
 
+  # Phase 6: the scheduler + the process that actually crawls/scores.
+  # Both use the app's own image (see Dockerfile) and talk to
+  # postgres/redis over the internal Docker network - note the URLs here
+  # use the service names and *container* ports (5432/6379), not the
+  # host-mapped ports (5544/6380) .env/the Windows-side API use.
+  worker:
+    build: .
+    container_name: job_bot_worker
+    restart: unless-stopped
+    # concurrency=2: each prefork worker process loads its own independent
+    # copy of the local embedding model (~hundreds of MB, see
+    # app/services/embeddings - it's process-local via @lru_cache, so
+    # forking doesn't share it). The default (one process per CPU core)
+    # was verified live against all 210 real due sources and caused the
+    # WSL2 VM (3.75GB total) to run out of memory and SIGKILL workers
+    # mid-crawl once enough sources became due at the same time - a
+    # thundering herd that a busy Beat cycle or a fresh sheet sync could
+    # reproduce. 2 keeps peak concurrent model copies bounded and safe.
+    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=2
+    environment:
+      DATABASE_URL: postgresql+psycopg://job_bot:job_bot@postgres:5432/job_bot
+      REDIS_URL: redis://redis:6379/0
+      EMBEDDING_PROVIDER: local
+    volumes:
+      - fastembed_cache:/root/.cache
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  beat:
+    build: .
+    container_name: job_bot_beat
+    restart: unless-stopped
+    command: celery -A app.tasks.celery_app beat --loglevel=info
+    environment:
+      DATABASE_URL: postgresql+psycopg://job_bot:job_bot@postgres:5432/job_bot
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
 volumes:
   pgdata:
   redisdata:
+  fastembed_cache:
