@@ -14,6 +14,10 @@ certs/*.pem
 # Resume files / user data (never committed)
 data/
 
+# Frontend (React dashboard) - build output is produced locally
+frontend/node_modules/
+frontend/dist/
+
 # Python
 __pycache__/
 *.py[cod]

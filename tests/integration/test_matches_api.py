@@ -107,6 +107,45 @@ def test_top_matches_are_israel_only_by_default(
     assert abroad_job.id in {match["job_id"] for match in everything}
 
 
+def test_top_matches_search_dismissal_and_per_job_breakdown(
+    api_client: TestClient, db_session: Session
+) -> None:
+    open_job, _, _ = _seed(db_session)
+
+    by_query = api_client.get("/matches/top", params={"q": "acme"}).json()
+    assert open_job.id in {m["job_id"] for m in by_query}
+    assert api_client.get("/matches/top", params={"q": "zzz-no-such"}).json() == []
+    assert by_query[0]["source_type"] == "greenhouse"
+    assert by_query[0]["company_name"] == "Acme"
+    assert by_query[0]["last_feedback"] is None
+
+    # Dismissing feedback hides the job by default, but not with hide_dismissed=false.
+    api_client.post(f"/jobs/{open_job.id}/feedback", json={"action": "too_senior"})
+    assert open_job.id not in {m["job_id"] for m in api_client.get("/matches/top").json()}
+    shown = api_client.get("/matches/top", params={"hide_dismissed": "false"}).json()
+    assert {m["job_id"]: m["last_feedback"] for m in shown}[open_job.id] == "too_senior"
+
+    breakdown = api_client.get(f"/matches/job/{open_job.id}")
+    assert breakdown.status_code == 200
+    assert breakdown.json()["seniority_score"] == 1.0
+    assert api_client.get("/matches/job/999999").status_code == 404
+
+
+def test_dashboard_stats_and_root_redirect(api_client: TestClient, db_session: Session) -> None:
+    _seed(db_session)
+
+    stats = api_client.get("/dashboard/stats")
+    assert stats.status_code == 200
+    body = stats.json()
+    assert body["active_jobs"] >= 1
+    assert body["matches"] >= 2
+    assert any(row["source_type"] == "greenhouse" for row in body["by_source_type"])
+
+    root = api_client.get("/", follow_redirects=False)
+    assert root.status_code in (302, 307)
+    assert root.headers["location"] == "/app/"
+
+
 def test_top_matches_rejects_out_of_range_params(api_client: TestClient) -> None:
     assert api_client.get("/matches/top", params={"limit": 0}).status_code == 422
     assert api_client.get("/matches/top", params={"min_score": 101}).status_code == 422

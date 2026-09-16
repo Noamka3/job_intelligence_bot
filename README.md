@@ -6,9 +6,12 @@ CV and configurable target roles using hybrid (semantic + rule-based)
 scoring, and notifies via WhatsApp. See `docs/architecture.md` for the
 full design and `docs/job_sources.md` for verified ATS API formats.
 
-**Status: Phase 8 (remaining adapters + embedded-board detection) complete
-and verified live**, on top of Phases 1-6 (Phase 7, WhatsApp, is
-deliberately deferred to the end). All 240 real companies from the sheet
+**Status: Phase 9 (the dashboard) is built on top of Phases 1-6 and 8**
+(Phase 7, WhatsApp, is deliberately deferred to the end). Open
+`http://127.0.0.1:8000/app/` after `npm run build` in `frontend/` - a
+React app served by the same FastAPI process: top matches with one-tap
+feedback, a per-job score breakdown, a live status page, and CV/target
+role management. See `docs/dashboard.md`. All 240 real companies from the sheet
 are imported; adapters for Greenhouse, Lever, Ashby, Comeet, Workday,
 Workable, SmartRecruiters, Taleo, JSON-LD pages and plain HTML career
 pages discover jobs incrementally (new jobs get fetched/embedded,
@@ -112,6 +115,7 @@ No WhatsApp notifications yet (Phase 7) - new high-scoring matches sit in
 
 - Python 3.12+
 - Docker Desktop
+- Node.js 20+ (only to build the dashboard: `cd frontend && npm install && npm run build`)
 - A Google Cloud service account with Sheets API read access (Phase 3) -
   **or** skip it and use `app.cli import-excel <path>` instead, see below
 - [Ollama](https://ollama.com) installed and running (`ollama serve`),
@@ -147,8 +151,12 @@ docker compose up -d postgres redis
 # cached under $FASTEMBED_CACHE_PATH, or <system temp>/fastembed_cache by
 # default - fastembed's own default, not ~/.cache).
 
-# 5. Run the API
+# 5. Build the dashboard (once, and after pulling frontend changes)
+cd frontend && npm install && npm run build && cd ..
+
+# 6. Run the API + dashboard
 .venv/Scripts/python.exe -m uvicorn app.main:app --reload
+# -> http://127.0.0.1:8000/app/ is the dashboard
 # -> GET http://127.0.0.1:8000/health should return {"status": "ok", ...}
 ```
 

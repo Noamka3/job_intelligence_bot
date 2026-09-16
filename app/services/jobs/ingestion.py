@@ -76,10 +76,17 @@ def get_due_sources(db: Session) -> list[CareerSource]:
 def crawl_source(
     db: Session, source: CareerSource, embedding_provider: EmbeddingProvider
 ) -> CrawlRun:
+    # Every network call below happens with *no* open transaction: a
+    # crawl of a big source runs for minutes, and a transaction held across
+    # those fetches sat "idle in transaction" holding row locks on
+    # job_postings/job_matches (and FK locks on the candidate profile) the
+    # whole time - blocking the other worker and anything else touching
+    # the same rows. So the run/source state is committed up front and
+    # each job's writes are committed as soon as they're made.
     run = CrawlRun(career_source_id=source.id, status=CrawlRunStatus.RUNNING)
     db.add(run)
-    db.flush()
     source.last_attempt_at = utc_now()
+    db.commit()
 
     adapter = get_adapter(source.source_type)
     if adapter is None:
@@ -100,62 +107,79 @@ def crawl_source(
             select(JobPosting).where(JobPosting.career_source_id == source.id)
         ).scalars()
     }
+    db.commit()
 
     seen_external_ids: set[str] = set()
     created = updated = attempted = failed = unavailable_closed = 0
 
-    for stub in stubs:
-        seen_external_ids.add(stub.external_job_id)
-        existing = existing_jobs.get(stub.external_job_id)
+    try:
+        for stub in stubs:
+            seen_external_ids.add(stub.external_job_id)
+            existing = existing_jobs.get(stub.external_job_id)
 
-        if existing is not None:
-            existing.last_seen_at = utc_now()
-            existing.missing_streak = 0
-            existing.status = JobStatus.ACTIVE
-            if _is_definitely_unchanged(existing, stub):
+            if existing is not None and _is_definitely_unchanged(existing, stub):
+                _mark_seen(existing)
+                db.commit()
                 continue
 
-        attempted += 1
-        try:
-            fetched = _fetch_and_embed(adapter, source, stub, existing, embedding_provider)
-        except JobUnavailableError as exc:
-            # The source says this isn't an open job page (gone, or a
-            # listing/category page a generic listing linked to) - not a
-            # failure to retry. Close it if we had stored it as a job.
-            logger.info(
-                "job unavailable at source",
-                extra={
-                    "source_id": source.id,
-                    "external_job_id": stub.external_job_id,
-                    "reason": exc.reason,
-                },
-            )
-            if existing is not None:
-                existing.status = JobStatus.CLOSED
-                unavailable_closed += 1
-            continue
-        except Exception as exc:  # noqa: BLE001 - one broken job must not sink the rest of the listing (spec §34)
-            logger.warning(
-                "skipping job: fetch/embed failed",
-                extra={
-                    "source_id": source.id,
-                    "external_job_id": stub.external_job_id,
-                    "error_type": type(exc).__name__,
-                },
-            )
-            failed += 1
-            continue
+            attempted += 1
+            try:
+                fetched = _fetch_and_embed(adapter, source, stub, existing, embedding_provider)
+            except JobUnavailableError as exc:
+                # The source says this isn't an open job page (gone, or a
+                # listing/category page a generic listing linked to) - not
+                # a failure to retry. Close it if we had stored it as a job.
+                logger.info(
+                    "job unavailable at source",
+                    extra={
+                        "source_id": source.id,
+                        "external_job_id": stub.external_job_id,
+                        "reason": exc.reason,
+                    },
+                )
+                if existing is not None:
+                    existing.last_seen_at = utc_now()
+                    existing.status = JobStatus.CLOSED
+                    unavailable_closed += 1
+                    db.commit()
+                continue
+            except Exception as exc:  # noqa: BLE001 - one broken job must not sink the rest of the listing (spec §34)
+                logger.warning(
+                    "skipping job: fetch/embed failed",
+                    extra={
+                        "source_id": source.id,
+                        "external_job_id": stub.external_job_id,
+                        "error_type": type(exc).__name__,
+                    },
+                )
+                failed += 1
+                if existing is not None:
+                    # It was listed, so it's not missing - just not readable now.
+                    _mark_seen(existing)
+                    db.commit()
+                continue
 
-        if existing is None:
-            new_job = _create_job(db, source, fetched)
-            existing_jobs[stub.external_job_id] = new_job
-            created += 1
-            score_job(db, new_job)
-        elif _apply_update(existing, fetched):
-            updated += 1
-            # Only rescore when the content actually changed enough to
-            # re-embed (spec §45: never re-run matching on unchanged jobs).
-            score_job(db, existing)
+            if existing is None:
+                new_job = _create_job(db, source, fetched)
+                existing_jobs[stub.external_job_id] = new_job
+                created += 1
+                score_job(db, new_job)
+            else:
+                _mark_seen(existing)
+                if _apply_update(existing, fetched):
+                    updated += 1
+                    # Only rescore when the content actually changed enough
+                    # to re-embed (spec §45: never re-run matching on
+                    # unchanged jobs).
+                    score_job(db, existing)
+            db.commit()
+    except Exception as exc:
+        # A DB error mid-loop (an unexpected constraint, a lost connection)
+        # must not leave the run RUNNING forever - record it, then let the
+        # task layer's retry semantics see the exception.
+        db.rollback()
+        _fail_run(db, run, source, type(exc).__name__, str(exc)[:2000])
+        raise
 
     if attempted and failed == attempted:
         # Every detail fetch failing means the site/adapter is broken, not
@@ -184,6 +208,12 @@ def crawl_source(
 
     db.commit()
     return run
+
+
+def _mark_seen(job: JobPosting) -> None:
+    job.last_seen_at = utc_now()
+    job.missing_streak = 0
+    job.status = JobStatus.ACTIVE
 
 
 @dataclass(frozen=True)

@@ -4,6 +4,8 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
+from app.models.enums import CareerSourceType, JobFeedbackAction
+
 
 class MatchRead(BaseModel):
     id: int
@@ -24,6 +26,13 @@ class MatchRead(BaseModel):
     created_at: datetime
 
     job_title: str
+    company_id: int
     company_name: str
     location_text: str | None
+    country: str | None
+    source_type: CareerSourceType
+    source_url: str
     apply_url: str | None
+    source_published_at: datetime | None
+    first_seen_at: datetime
+    last_feedback: JobFeedbackAction | None
