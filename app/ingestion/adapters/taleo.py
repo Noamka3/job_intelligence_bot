@@ -198,13 +198,14 @@ def _location_filter_ids(facets: list[dict[str, Any]]) -> list[str]:
         return []
     ids: list[str] = []
     for facet in facets:
-        if str(facet.get("id") or facet.get("facetName") or "").upper() != "LOCATION":
+        if str(facet.get("id") or "").upper() != "LOCATION":
             continue
-        values = facet.get("facetValues") or facet.get("values") or facet.get("items") or []
-        for value in values:
-            label = str(value.get("label") or value.get("name") or value.get("description") or "")
-            value_id = value.get("id") or value.get("value")
-            if value_id and country in label.lower():
+        # Real shape: {"id": "LOCATION", "facetValueResults": [{"id":
+        # "105010219", "text": "Israel", "quantity": "10", "level": 1}]}
+        for value in facet.get("facetValueResults") or []:
+            text = str(value.get("text") or "")
+            value_id = value.get("id")
+            if value_id and country in text.lower():
                 ids.append(str(value_id))
     return ids
 

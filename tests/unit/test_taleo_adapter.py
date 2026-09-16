@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import json
 from typing import Any
@@ -50,9 +50,9 @@ def test_list_jobs_sends_timezone_header_filters_by_country_and_paginates() -> N
                     "facetResults": [
                         {
                             "id": "LOCATION",
-                            "facetValues": [
-                                {"id": "105010219", "label": "Israel"},
-                                {"id": "2", "label": "Sweden"},
+                            "facetValueResults": [
+                                {"id": "105010219", "text": "Israel", "quantity": "10", "level": 1},
+                                {"id": "2", "text": "Sweden", "quantity": "2", "level": 1},
                             ],
                         }
                     ],
