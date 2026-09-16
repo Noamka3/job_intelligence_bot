@@ -6,11 +6,35 @@ CV and configurable target roles using hybrid (semantic + rule-based)
 scoring, and notifies via WhatsApp. See `docs/architecture.md` for the
 full design and `docs/job_sources.md` for verified ATS API formats.
 
-**Status: Phase 6 (automatic scheduling) complete and verified end-to-end**,
-on top of Phases 1-5. All 240 real companies from the sheet are imported;
-Greenhouse/Comeet/JSON-LD adapters discover jobs incrementally (new jobs
-get fetched/embedded, unchanged jobs skipped cheaply, missing jobs closed
-after several consecutive crawls, never deleted). The matching engine
+**Status: Phase 8 (remaining adapters + embedded-board detection) complete
+and verified live**, on top of Phases 1-6 (Phase 7, WhatsApp, is
+deliberately deferred to the end). All 240 real companies from the sheet
+are imported; adapters for Greenhouse, Lever, Ashby, Comeet, Workday,
+Workable, SmartRecruiters, Taleo, JSON-LD pages and plain HTML career
+pages discover jobs incrementally (new jobs get fetched/embedded,
+unchanged jobs skipped cheaply, missing jobs closed after several
+consecutive crawls, never deleted).
+
+The biggest Phase 8 finding wasn't an adapter: a survey of every
+"custom" company page in the sheet showed that ~45 of them just *embed*
+a Comeet/Workday/Greenhouse/Ashby/Workable board in the company's own
+domain, and the hostname-based resolver had filed all of them as
+`generic_html`. The resolver now reads the page: it recognizes the real
+embed shapes (`COMEET.init({...})`, `comeet.com/jobs/{slug}/{uid}` links,
+the Comeet WordPress plugin's `/careers/{uid}/` position pages,
+Greenhouse embed scripts, `myworkdayjobs.com` links, ...) and, where a
+board is loaded purely from JS with only a hint left behind (JFrog,
+AppsFlyer), tries the company's domain label as the board token and
+keeps it only if the ATS's public API answers for it. Every shape is
+verified against the named real page - see `docs/job_sources.md`, which
+also records the exact (undocumented, but live-verified) Workday and
+Taleo request formats, including how Workday's country facet differs per
+tenant. Not built: a browser (Playwright) fallback for the ~25 pages whose
+job list is injected by JS and the ~8 behind a WAF; those stay
+`generic_html` and simply yield no jobs.
+
+Run `python -m app.cli reresolve-sources` after pulling a resolver change
+to re-classify companies already in the database (no sheet read). The matching engine
 (`app/services/matching/`) combines semantic similarity, skill matching,
 title/role matching, seniority detection, location, and recency into one
 0-100 score with human-readable reasons/concerns, and now runs
@@ -187,10 +211,12 @@ What the scheduler actually does each tick:
 
 - `dispatch_due_sources` selects enabled sources of enabled companies
   whose `next_check_at` has passed **and** whose type has an adapter
-  (Greenhouse/Lever/Ashby/Comeet/JSON-LD today) - `workday`,
-  `generic_html`, ... are left untouched until Phase 8 registers their
-  adapters, so they're picked up on the first tick after that instead
-  of sitting in a 24h backoff.
+  registered (`app/ingestion/registry.py` - everything except
+  `playwright` today), so a type that gains an adapter later is picked
+  up on the first tick after that instead of sitting in a 24h backoff.
+- Workday and Taleo boards are asked for `TARGET_COUNTRY` (Israel)
+  server-side, so a global board like Intel's (594 jobs) costs ~22
+  fetches per crawl, not ~600.
 - Each selected source is leased for one poll interval *before* being
   enqueued, so a long queue can't be re-dispatched by the next tick.
 - `crawl_one_source` runs the same `crawl_source()` as `crawl-now`: a
@@ -405,6 +431,7 @@ the intended lever for this, not something the scorer should special-case.
 .venv/Scripts/python.exe -m app.cli rebuild-profile
 .venv/Scripts/python.exe -m app.cli sync-sheet
 .venv/Scripts/python.exe -m app.cli import-excel "C:\path\to\companies.xlsx"
+.venv/Scripts/python.exe -m app.cli reresolve-sources
 .venv/Scripts/python.exe -m app.cli crawl-now
 .venv/Scripts/python.exe -m app.cli crawl-company "Torq"
 .venv/Scripts/python.exe -m app.cli score-all
@@ -416,7 +443,11 @@ embedding models), without re-uploading the file. `sync-sheet` runs the
 same company sync as `POST /sync/google-sheet`; `import-excel` does the
 same upsert/disable logic from a local .xlsx export instead (company name
 in column A, URL in column B) - no Google credentials needed, useful
-before setting those up or for a one-off import. `crawl-now` crawls every
+before setting those up or for a one-off import. `reresolve-sources`
+re-runs career-source resolution for every company already imported,
+from the URL it was imported with (no sheet read) - run it after a
+resolver change so companies get their newly recognized board/adapter
+in place, never as a duplicate source. `crawl-now` crawls every
 due `CareerSource`; `crawl-company` crawls just one company's sources, by
 name - useful for testing a single adapter without waiting on a full
 sync. `score-all` scores every `ACTIVE` job against the active CV and

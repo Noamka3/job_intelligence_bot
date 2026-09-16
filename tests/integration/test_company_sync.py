@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from pathlib import Path
 
@@ -292,6 +292,64 @@ def test_row_pointing_at_a_different_board_retires_the_old_source_and_its_jobs(
     assert new.enabled is True
     db_session.refresh(job)
     assert job.status == JobStatus.CLOSED  # nothing polls that board any more
+
+
+def test_embedded_board_resolution_updates_the_generic_source_in_place(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A company page first stored as generic_html later resolves (after
+    the resolver learned to see embedded boards) to the Comeet board it
+    wraps: same row, new type/identifier, and the board URL is what gets
+    crawled from now on - never a second source."""
+    page = "https://www.embedded-test.example/careers/"
+    monkeypatch.setitem(_RESOLUTIONS, page, ResolvedSource(CareerSourceType.GENERIC_HTML, None))
+    _mock_rows(monkeypatch, [CompanySheetRow(name="Embedded Test Co", url=page)])
+    company_sync.sync_companies_from_sheet(db_session)
+
+    monkeypatch.setitem(
+        _RESOLUTIONS,
+        page,
+        ResolvedSource(
+            CareerSourceType.COMEET, "63.00B", board_url="https://www.comeet.com/jobs/embedded-test/63.00B"
+        ),
+    )
+    result = company_sync.sync_companies_from_sheet(db_session)
+
+    assert result.sources_created == 0
+    (source,) = _sources_of(db_session, "embedded test co")
+    assert source.source_type == CareerSourceType.COMEET
+    assert source.external_identifier == "63.00B"
+    assert source.source_url == "https://www.comeet.com/jobs/embedded-test/63.00B"
+    assert source.enabled is True
+    assert source.next_check_at is None
+
+    # ...and a later sync resolving the same board again is a no-op.
+    company_sync.sync_companies_from_sheet(db_session)
+    assert len(_sources_of(db_session, "embedded test co")) == 1
+
+
+def test_resync_from_stored_urls_reresolves_without_reading_the_sheet(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    page = "https://www.embedded-test.example/careers/"
+    monkeypatch.setitem(_RESOLUTIONS, page, ResolvedSource(CareerSourceType.GENERIC_HTML, None))
+    _mock_rows(monkeypatch, [CompanySheetRow(name="Embedded Test Co", url=page)])
+    company_sync.sync_companies_from_sheet(db_session)
+
+    def _boom() -> list[CompanySheetRow]:
+        raise AssertionError("the sheet must not be read")
+
+    monkeypatch.setattr(company_sync, "read_company_rows", _boom)
+    monkeypatch.setitem(
+        _RESOLUTIONS, page, ResolvedSource(CareerSourceType.WORKDAY, "embedded/External")
+    )
+
+    result = company_sync.resync_companies_from_stored_urls(db_session)
+
+    assert result.companies_seen >= 1
+    (source,) = _sources_of(db_session, "embedded test co")
+    assert source.source_type == CareerSourceType.WORKDAY
+    assert source.external_identifier == "embedded/External"
 
 
 def test_disabling_a_company_retires_its_sources(

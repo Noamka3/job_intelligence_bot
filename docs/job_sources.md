@@ -1,14 +1,13 @@
 # Job sources
 
 Phase 4 implemented adapters for Greenhouse, Lever, Ashby, Comeet, and a
-basic JSON-LD parser (`app/ingestion/adapters/`). This document records
-the verified facts gathered during research so they don't need to be
-re-derived later. Comeet's adapter was additionally verified against two
-real companies from the sheet with live HTTP requests during development
-(see below) - Greenhouse/Lever/Ashby/JSON-LD are verified against their
-public documentation and covered by respx-mocked tests, but have not yet
-been exercised against a real company's live board end-to-end (that needs
-an OpenAI API key to complete the embedding step - not yet configured).
+basic JSON-LD parser; Phase 8 added Workday, Workable, SmartRecruiters,
+Taleo and a generic HTML adapter, plus detection of boards *embedded* in
+company pages (`app/ingestion/adapters/`, `app/ingestion/resolver.py`).
+This document records the verified facts gathered during research so they
+don't need to be re-derived later. Every adapter below was exercised
+against at least one real company's live board during development; the
+Phase 8 ones against the sheet's own companies (see each section).
 The company distribution below is the real breakdown from the current
 company spreadsheet (240 rows), which is why adapter priority here differs
 slightly from the spec's abstract ranking (Comeet, with ~10 real
@@ -21,14 +20,15 @@ JSON-LD as originally ranked).
 |---|---|---|
 | `comeet` | ~10 | Cymotive, Tango, Buyme, Better, Israel Discount Bank, Classiq, Pango, LiveU, TriEye, Natural Intelligence |
 | `greenhouse` | 1 | Torq |
-| `workday` | 3 | Intel, Flex, Medtronic |
+| `workday` | 3 by hostname + ~5 embedded on company pages | Intel, Flex, Medtronic; Unity, Samsung, Mastercard, Ribbon, Leidos |
 | Oracle Taleo | 1 | Radware |
-| `dueto.io` (shared Israeli ATS, no dedicated adapter yet — see below) | 3 | Yad2, Capow, Dig |
-| `adamtotal.co.il` (shared Israeli ATS, no dedicated adapter yet) | 2 | CBC Israel, Harel |
-| `topmatch.co.il` (shared Israeli ATS, no dedicated adapter yet) | 1 | Altshuler Shaham |
+| `comeet` embedded on the company's own page (Phase 8) | ~30 | eToro, Checkmarx, Atera, Cyera, Buildots, Kaltura, Gett, hibob, ... |
+| `greenhouse`/`ashby`/`workable` embedded on the company's own page (Phase 8) | ~7 | SimilarWeb, Nexxen, JFrog, AppsFlyer, Crusoe, Humanz, Anzu |
+| `dueto.io` / `topmatch.co.il` | 4 | dead links (404) - Yad2, Capow, Dig, Altshuler Shaham |
+| `adamtotal.co.il` | 2 | CBC Israel, Harel - server-rendered, handled by generic HTML |
 | LinkedIn (`unsupported`, never scraped) | ~30 | mostly recruiter profile links (`linkedin.com/in/...`), a few `linkedin.com/company/.../jobs/` |
 | Broken/missing URL (`unsupported`) | a few | Meta and NICE have no URL; NVIDIA's row points at Earnix's careers page |
-| Everything else | ~190 | custom company career pages — routed through JSON-LD detection first, then generic HTML, then Playwright as a last resort |
+| Everything else (`generic_html`) | ~130 | custom company career pages: ~60 render job links server-side (generic HTML adapter), ~25 are JS-rendered and ~8 sit behind a WAF (need the browser fallback, not built) |
 
 No Lever or Ashby examples exist in the sheet today, but both adapters are
 still built (spec priority order + future-proofing for companies added
@@ -114,7 +114,107 @@ search summary did not surface:
 - Fields to read: `title`, `description`, `datePosted`, `validThrough`, `employmentType`, `hiringOrganization`, `jobLocation`, `applicantLocationRequirements`, `skills`.
 - Many modern company career sites include this for Google for Jobs SEO even when they have no public ATS API — this is expected to cover a meaningful chunk of the ~190 "custom" companies for free, before resorting to generic HTML/Playwright.
 
-### Workday, Taleo, and the Israeli shared platforms (dueto.io, adamtotal.co.il, topmatch.co.il)
-Not yet verified against live documentation — will be confirmed against
-real responses when their adapters are built (Phase 8), not invented from
-memory, per the project's working rules.
+### Workday (Phase 8) - verified live against Intel, Flex, Medtronic
+- `POST https://{tenant}.{wdN}.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs` with
+  `{"appliedFacets": {...}, "limit": 20, "offset": 0, "searchText": ""}` ->
+  `{total, jobPostings: [{title, externalPath, locationsText, postedOn, bulletFields}], facets}`.
+  `limit` caps at 20. No auth. Not a documented API - it is what the site's
+  own JS calls; unchanged for years.
+- `GET .../wday/cxs/{tenant}/{site}{externalPath}` -> `jobPostingInfo`:
+  `title`, `jobDescription` (HTML), `location`, `additionalLocations`,
+  `startDate` (the only real date - `postedOn` is "Posted Yesterday"),
+  `timeType`, `remoteType`, `externalUrl`, `jobReqId`, `country.descriptor`.
+- **The country facet is tenant-specific**: Medtronic exposes
+  `locationCountry`, Flex `Location_Country` (both with Israel =
+  `084562884af243748dad7c84c304d89a`, a Workday-wide reference id), Intel
+  has no country facet at all - only city-level `locations` values
+  ("Israel, Haifa"), nested under a `locationMainGroup` facet. Sending a
+  facet parameter a tenant doesn't have is a 400. The adapter therefore
+  discovers the right parameter/ids from the first response's `facets`
+  (country-level preferred, city-level otherwise, `searchText` as the last
+  fallback) instead of assuming one. Result: Intel 594 -> 22 jobs, Flex
+  1610 -> 10, Medtronic 1095 -> 25, fetched instead of ~3,300.
+- Site URLs come in several shapes, all seen in the sheet or on company
+  pages: `/External/page/<id>` (Intel), `/he-IL/MedtronicCareers` (locale
+  prefix), `/Unity/job/...` (deep link), `//sec.wd3.myworkdayjobs.com/...`
+  (protocol-relative, Samsung), `/External/login` (Leidos). The resolver
+  stores `tenant/site` as the identifier and the site root as the URL.
+
+### Workable (Phase 8) - verified live (Humanz) and against workable.readme.io
+- `GET https://apply.workable.com/api/v1/widget/accounts/{subdomain}` ->
+  `{name, description, jobs: [{shortcode, title, city, country, state,
+  department, url, application_url, published_on, created_at,
+  employment_type, telecommuting, locations}]}`. No auth, no pagination
+  (one payload). **Emits one row per location** for multi-location jobs
+  (71 rows for 57 jobs on a real account) - dedupe by `shortcode`.
+- `GET https://apply.workable.com/api/v2/accounts/{subdomain}/jobs/{shortcode}` ->
+  `description`, `requirements`, `benefits` (HTML), `location`, `department`
+  (list), `remote`, `workplace` (`on_site`/`hybrid`/`remote`), `published`.
+  Undocumented but what apply.workable.com itself uses.
+- `POST .../api/v3/accounts/{subdomain}/jobs` (paginated via `nextPage` ->
+  `token`) also works; not needed at this volume.
+
+### SmartRecruiters (Phase 8) - verified against the official OpenAPI spec + a live call
+- `GET https://api.smartrecruiters.com/v1/companies/{companyIdentifier}/postings?limit=100&offset=0`
+  -> `{offset, limit, totalFound, content: [...]}`; `limit` caps at 100,
+  paginate by offset. `GET .../postings/{id}` adds
+  `jobAd.sections.{companyDescription,jobDescription,qualifications,additionalInformation}.text`
+  (HTML), `applyUrl`, `postingUrl`. `security: []` in the spec - no auth.
+  Only `releasedDate`, no updated-at. No company in the sheet uses it
+  today; built because the spec lists it and it verified cheaply.
+
+### Oracle Taleo careersection (Phase 8) - verified live against radware.taleo.net
+- `POST https://{host}/careersection/rest/jobboard/searchjobs?portal=101430233&lang=en`
+  needs `Content-Type: application/json` **and** a `tz`/`tzname` header
+  (500 without), and the full filter body the page's JS sends (trimmed
+  arrays 500 too). `portal=101430233` is not in the page HTML - it is the
+  Taleo-wide default external portal, confirmed on two unrelated hosts.
+  -> `requisitionList[{jobId, contestNo, column, linkedColumn,
+  locationsColumns}]`, `pagingData{pageSize: 25, totalCount}`,
+  `facetResults` (LOCATION facet ids -> server-side Israel filter: 40 -> 10).
+- Detail `GET .../careersection/{section}/jobdetail.ftl?job={contestNo}&lang=en`:
+  the description is not server-rendered HTML; it sits in an inline
+  `api.fillList('requisitionDescriptionInterface', 'descRequisition', [...])`
+  JS string array - `[9]` title, `[10]` contestNo, `[11]` description,
+  `[12]` qualifications (both `!*!`-prefixed, URL-encoded HTML), `[13]`
+  location ("IL-IL-Tel Aviv"). No RSS (off by default in Taleo).
+
+### Embedded boards on company pages (Phase 8) - the big one
+A survey of every "custom" page in the sheet (197 fetched) found that
+**~45 of them just wrap a known ATS in the company's own domain** - the
+hostname-based resolver had filed all of them as `generic_html`. Real
+embed shapes now recognized, each verified on the named page:
+
+| Shape | Seen on | Resolves to |
+|---|---|---|
+| `COMEET.init({"token": ..., "company-uid": "41.009"})` inline JS | eToro, Checkmarx | `comeet`, crawl the company page itself (the adapter reads both values from `COMEET.init`) |
+| Links to `comeet.com/jobs/{slug}/{uid}/...` | Atera, Cyera | `comeet`, board `https://www.comeet.com/jobs/{slug}/{uid}` |
+| Comeet WordPress plugin: positions under the company domain as `/careers/{position-uid}/`, no credentials on the listing | Buildots, Kaltura | follow one position page for `company-uid`, then the public board `comeet.com/jobs/{domain label}/{uid}` - kept only if it serves `COMPANY_DATA` |
+| `boards.greenhouse.io/embed/job_board?for=X` / `job-boards.greenhouse.io/X/jobs/...` (incl. JSON-escaped `\/`) | Nexxen, SimilarWeb | `greenhouse` |
+| Board loaded purely from JS, only `?gh_department=` hints | JFrog, AppsFlyer | `greenhouse` with token = domain label, **only** after `boards-api.greenhouse.io/v1/boards/{token}/jobs` answers 200 (same rule for Lever/Ashby hints) |
+| `jobs.ashbyhq.com/X/embed`, `api.ashbyhq.com/posting-api/job-board/X` | Nexxen, Crusoe | `ashby` |
+| `apply.workable.com/X/`, `apply.workable.com/api/v1/widget/accounts/X` | Humanz, Anzu | `workable` |
+| Any `{tenant}.{wdN}.myworkdayjobs.com/...` link | Unity, Samsung, Mastercard, Ribbon, Leidos | `workday` |
+
+Still `generic_html` after all that (verified): pages whose list is
+injected by JS with no board reference at all (hibob, Mobileye), and
+pages behind a WAF that 403s non-browser clients (Nayax, Check Point,
+Fiverr, ...). Those are the browser-fallback's job (not built).
+
+### Generic HTML (Phase 8)
+No API and no board: the listing page's job links are found from its own
+structure (the largest group of same-shaped same-site anchors whose
+links look like job pages), titles from the anchor's heading or the
+card's heading when the anchor is a "View Details" button; a job page is
+read via its JSON-LD JobPosting when present (Kaltura, Wolt), else
+`<h1>` + the main content block. Verified on Buildots, Island, Wolt,
+Kaltura, Moveo, GotFriends. Known limits: recruiting agencies whose
+"jobs" are category pages (GotFriends) come through as such; JS-rendered
+job pages give a title but no description (Buildots detail pages - which
+is why the Comeet-plugin resolution above matters).
+
+### Israeli shared platforms (dueto.io, adamtotal.co.il, topmatch.co.il)
+All three sheet URLs were checked live: dueto.io and topmatch.co.il
+return 404 (dead links in the sheet), adamtotal serves a 23MB
+server-rendered ASP.NET page that the generic adapter handles. No
+dedicated adapters.

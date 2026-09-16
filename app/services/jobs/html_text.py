@@ -6,6 +6,8 @@ scraper - just strips markup so the text is embeddable, per spec §11
 
 from __future__ import annotations
 
+import html as html_entities
+
 from bs4 import BeautifulSoup
 
 _BLOCK_TAGS = {"p", "div", "li", "br", "h1", "h2", "h3", "h4", "h5", "h6", "tr"}
@@ -14,6 +16,14 @@ _BLOCK_TAGS = {"p", "div", "li", "br", "h1", "h2", "h3", "h4", "h5", "h6", "tr"}
 def html_to_text(html: str | None) -> str:
     if not html:
         return ""
+
+    # Some sources hand over HTML that was entity-escaped once more
+    # ("&lt;p&gt;..." - Greenhouse's API, and JSON-LD descriptions on
+    # Greenhouse-backed pages such as Wolt's). Left alone, the markup
+    # survives as literal text. Only when the text has escaped tags and
+    # no real ones, so genuine "&lt;" inside proper HTML stays intact.
+    if "&lt;" in html and "<" not in html:
+        html = html_entities.unescape(html)
 
     soup = BeautifulSoup(html, "lxml")
     for tag in soup(["script", "style"]):

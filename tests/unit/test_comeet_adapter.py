@@ -61,6 +61,37 @@ def test_list_jobs_resolves_credentials_from_page_then_lists_positions() -> None
 
 
 @respx.mock
+def test_credentials_are_read_from_a_company_page_embedding_the_js_api() -> None:
+    """eToro/Checkmarx-style pages: no COMPANY_DATA, but COMEET.init({...})
+    with the token and company-uid - a JS object literal with comments,
+    so it can't be json.loads'ed."""
+    page = CareerSource(
+        source_type=CareerSourceType.COMEET,
+        source_url="https://www.etoro.com/about/careers/",
+        external_identifier="41.009",
+    )
+    respx.get("https://www.etoro.com/about/careers/").mock(
+        return_value=httpx.Response(
+            200,
+            text=(
+                "<script> window.comeetInit = function() { COMEET.init({ "
+                '"token": "14952452466D3DB7B61495240B91", "company-uid": "41.009", '
+                '"font-size": "16px", //optional\n "language": "en" }); }</script>'
+            ),
+        )
+    )
+    respx.get(
+        "https://www.comeet.com/careers-api/2.0/company/41.009/positions",
+        params={"token": "14952452466D3DB7B61495240B91", "details": "false"},
+    ).mock(return_value=httpx.Response(200, json=[_POSITION_STUB]))
+
+    stubs = ComeetAdapter().list_jobs(page)
+
+    assert len(stubs) == 1
+    assert stubs[0].raw == {"company_uid": "41.009", "token": "14952452466D3DB7B61495240B91"}
+
+
+@respx.mock
 def test_fetch_job_splits_description_into_sections() -> None:
     respx.get(
         "https://www.comeet.com/careers-api/2.0/company/F1.008/positions/AC.F64",

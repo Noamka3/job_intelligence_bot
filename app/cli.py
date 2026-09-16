@@ -7,7 +7,7 @@ Usage: python -m app.cli <command>
 from __future__ import annotations
 
 import typer
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.db.session import get_session_factory
 from app.models.career_source import CareerSource
@@ -20,6 +20,7 @@ from app.services.jobs.ingestion import crawl_source, get_due_sources
 from app.services.matching.runner import score_all_active_jobs
 from app.services.sheets.company_sync import (
     normalize_company_name,
+    resync_companies_from_stored_urls,
     sync_companies_from_excel,
     sync_companies_from_sheet,
 )
@@ -59,6 +60,30 @@ def import_excel(file_path: str) -> None:
         f"updated: {result.companies_updated}, disabled: {result.companies_disabled}, "
         f"sources created: {result.sources_created}"
     )
+
+
+@app.command("reresolve-sources")
+def reresolve_sources() -> None:
+    """Re-run career-source resolution for every enabled company from the
+    sheet URL it was imported with (no sheet read) - picks up resolver
+    improvements such as newly registered adapters or embedded-board
+    detection on companies already in the database.
+    """
+    session_factory = get_session_factory()
+    with session_factory() as db:
+        result = resync_companies_from_stored_urls(db)
+        by_type = db.execute(
+            select(CareerSource.source_type, func.count())
+            .where(CareerSource.enabled.is_(True))
+            .group_by(CareerSource.source_type)
+            .order_by(func.count().desc())
+        ).all()
+
+    typer.echo(
+        f"Re-resolved {result.companies_seen} companies; sources created: {result.sources_created}"
+    )
+    for source_type, count in by_type:
+        typer.echo(f"  {source_type.value:16} {count}")
 
 
 @app.command("rebuild-profile")

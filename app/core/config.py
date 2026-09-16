@@ -95,6 +95,16 @@ class Settings(BaseSettings):
     default_poll_minutes: int = 5
     job_missing_threshold: int = 3
 
+    # --- Ingestion ---
+    # Country to ask a source for server-side, where its API supports a
+    # location filter (Workday's facets today). Only a cost/volume
+    # optimization - a global board like Intel's lists hundreds of jobs
+    # elsewhere that would otherwise be fetched, embedded and then dropped
+    # by the Israel-only filter anyway. Empty string = no filter. Not the
+    # same thing as the Israel-only *display* filter in the API (spec §28
+    # keeps the pipeline itself country-agnostic).
+    target_country: str = "Israel"
+
     # --- Matching / notifications ---
     notification_score_threshold: int = Field(default=80, ge=0, le=100)
 

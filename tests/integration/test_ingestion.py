@@ -306,7 +306,7 @@ def test_get_due_sources_skips_types_without_an_adapter_and_disabled_companies(
 
     no_adapter_yet = CareerSource(
         company_id=company.id,
-        source_type=CareerSourceType.GENERIC_HTML,
+        source_type=CareerSourceType.PLAYWRIGHT,  # the one type still without an adapter
         source_url="https://a",
         enabled=True,
     )

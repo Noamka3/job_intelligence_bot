@@ -24,20 +24,36 @@ from app.services.jobs.html_text import html_to_text
 
 _BASE_URL = "https://www.comeet.com/careers-api/2.0/company"
 _COMPANY_DATA_RE = re.compile(r"COMPANY_DATA\s*=\s*(\{.*?\});", re.DOTALL)
+# A company's own page embedding the Comeet JS API (verified on real
+# pages: eToro, Checkmarx): COMEET.init({"token": "...", "company-uid":
+# "41.009", ...}) - a JS object literal with comments, not strict JSON,
+# hence regexes scoped to that call rather than json.loads.
+_COMEET_INIT_RE = re.compile(r"COMEET\.init\s*\(\s*\{(.{0,6000}?)\}\s*\)", re.DOTALL)
+_INIT_TOKEN_RE = re.compile(r"[\"']token[\"']\s*:\s*[\"']([A-Za-z0-9]+)[\"']")
+_INIT_UID_RE = re.compile(r"[\"']company-uid[\"']\s*:\s*[\"']([A-Z0-9]{2}\.[A-Z0-9]{3})[\"']")
 
 
 class ComeetCredentialsNotFoundError(RuntimeError):
     def __init__(self, url: str) -> None:
-        super().__init__(f"Could not find Comeet COMPANY_DATA on {url}")
+        super().__init__(
+            f"Could not find Comeet credentials (COMPANY_DATA or COMEET.init) on {url}"
+        )
 
 
 def _resolve_company_credentials(source_url: str) -> tuple[str, str]:
     html = get_text(source_url)
     match = _COMPANY_DATA_RE.search(html)
-    if not match:
-        raise ComeetCredentialsNotFoundError(source_url)
-    data = json.loads(match.group(1))
-    return data["company_uid"], data["token"]
+    if match:
+        data = json.loads(match.group(1))
+        return data["company_uid"], data["token"]
+
+    init = _COMEET_INIT_RE.search(html)
+    if init:
+        uid = _INIT_UID_RE.search(init.group(1))
+        token = _INIT_TOKEN_RE.search(init.group(1))
+        if uid and token:
+            return uid.group(1), token.group(1)
+    raise ComeetCredentialsNotFoundError(source_url)
 
 
 class ComeetAdapter:

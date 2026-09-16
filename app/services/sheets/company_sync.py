@@ -70,6 +70,22 @@ def sync_companies_from_excel(db: Session, file_path: str | Path) -> SheetSyncRe
     return sync_companies(db, rows)
 
 
+def resync_companies_from_stored_urls(db: Session) -> SheetSyncResult:
+    """Re-runs resolution for every enabled company from the sheet URL it
+    was imported with, without reading the sheet again - the way to pick
+    up resolver improvements (a newly registered adapter, embedded-board
+    detection) on rows that are already in the database. Same apply
+    logic as a real sync, so a source that now resolves differently is
+    updated in place, never duplicated.
+    """
+    companies = db.execute(select(Company).where(Company.enabled.is_(True))).scalars()
+    rows = [
+        CompanySheetRow(name=company.name, url=company.original_sheet_url)
+        for company in companies
+    ]
+    return sync_companies(db, rows)
+
+
 def sync_companies(db: Session, rows: list[CompanySheetRow]) -> SheetSyncResult:
     existing_by_name: dict[str, Company] = {
         company.normalized_name: company for company in db.execute(select(Company)).scalars()
@@ -165,6 +181,9 @@ def _ensure_career_source(
     """
     if not url:
         return 0
+    # A company page that embeds a known board resolves to that board's
+    # canonical URL - that's what gets crawled and stored.
+    crawl_url = resolved.board_url or url
 
     existing: CareerSource | None = None
     if resolved.external_identifier is not None:
@@ -176,10 +195,16 @@ def _ensure_career_source(
             )
         ).scalar_one_or_none()
     if existing is None:
+        # Either the URL as stored previously (before a resolver
+        # improvement recognized the embedded board) or the board itself.
         existing = db.execute(
-            select(CareerSource).where(
-                CareerSource.company_id == company.id, CareerSource.source_url == url
+            select(CareerSource)
+            .where(
+                CareerSource.company_id == company.id,
+                CareerSource.source_url.in_({crawl_url, url}),
             )
+            .order_by(CareerSource.id)
+            .limit(1)
         ).scalar_one_or_none()
 
     created = 0
@@ -187,7 +212,7 @@ def _ensure_career_source(
         existing = CareerSource(
             company_id=company.id,
             source_type=resolved.source_type,
-            source_url=url,
+            source_url=crawl_url,
             external_identifier=resolved.external_identifier,
             unsupported_reason=resolved.unsupported_reason,
             enabled=resolved.source_type != CareerSourceType.UNSUPPORTED,
@@ -196,7 +221,7 @@ def _ensure_career_source(
         db.add(existing)
         created = 1
     else:
-        _reconcile_existing_source(existing, url, resolved)
+        _reconcile_existing_source(existing, crawl_url, resolved)
 
     # Flushed so the next row of this same sync can see it: the session
     # is autoflush=False, and two rows for one board would otherwise both
@@ -220,18 +245,25 @@ def _reconcile_existing_source(existing: CareerSource, url: str, resolved: Resol
     changed_type = existing.source_type != resolved.source_type
     # A failed probe resolves to generic_html; never let that *downgrade*
     # a source we already classified better on an earlier, successful
-    # sync - only a hostname-resolved or JSON-LD result can change it.
+    # sync - only a hostname-resolved, embedded-board or JSON-LD result
+    # can change it.
     downgrade_to_fallback = (
         resolved.source_type == CareerSourceType.GENERIC_HTML
         and existing.source_type != CareerSourceType.UNSUPPORTED
     )
-    if changed_type and not downgrade_to_fallback:
+    if downgrade_to_fallback:
+        return
+    changed_identifier = (
+        resolved.external_identifier is not None
+        and existing.external_identifier != resolved.external_identifier
+    )
+    if changed_type or changed_identifier:
         logger.info(
             "career source re-resolved",
             extra={
                 "source_id": existing.id,
-                "from": existing.source_type.value,
-                "to": resolved.source_type.value,
+                "from": f"{existing.source_type.value}:{existing.external_identifier}",
+                "to": f"{resolved.source_type.value}:{resolved.external_identifier}",
             },
         )
         existing.source_type = resolved.source_type
