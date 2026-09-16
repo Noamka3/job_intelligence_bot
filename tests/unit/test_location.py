@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from app.services.jobs.location import classify_country, is_confidently_non_israeli
@@ -83,6 +85,16 @@ def test_location_naming_israel_and_elsewhere_counts_as_israel() -> None:
     assert is_confidently_non_israeli("Tel Aviv / New York") is False
 
 
+@pytest.mark.parametrize(
+    "location_text",
+    ["Remote US", "San Francisco, CA", "Madrid, Spain", "Sandton, South Africa", "Kadıköy, Turkey"],
+)
+def test_locations_seen_on_real_generic_and_board_pages_are_non_israeli(
+    location_text: str,
+) -> None:
+    assert is_confidently_non_israeli(location_text) is True
+
+
 def test_sql_regex_uses_the_same_vocabulary_as_the_python_check() -> None:
     from app.services.jobs.location import (
         NON_ISRAEL_LOCATION_HINTS,
@@ -90,9 +102,7 @@ def test_sql_regex_uses_the_same_vocabulary_as_the_python_check() -> None:
     )
 
     for hint in NON_ISRAEL_LOCATION_HINTS:
-        assert hint.replace(".", r"\.").replace(" ", r"\ ").replace("-", r"\-") in (
-            NON_ISRAEL_LOCATION_SQL_REGEX
-        ), hint
+        assert re.escape(hint) in NON_ISRAEL_LOCATION_SQL_REGEX, hint
     assert r"\yusa\y" in NON_ISRAEL_LOCATION_SQL_REGEX
 
 

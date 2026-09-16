@@ -65,6 +65,19 @@ class JobDetails(BaseModel):
     source_updated_at: datetime | None = None
 
 
+class JobUnavailableError(LookupError):
+    """Raised by fetch_job when the source itself says the stub is not an
+    open job: the page is gone (404/410) or turns out to be a listing/
+    category page rather than a posting. Distinct from a transient failure
+    - the crawler closes an existing row on it instead of retrying, and
+    skips a new one without counting it as an error.
+    """
+
+    def __init__(self, url: str, reason: str) -> None:
+        super().__init__(f"{reason}: {url}")
+        self.reason = reason
+
+
 class JobSourceAdapter(Protocol):
     def list_jobs(self, source: CareerSource) -> list[JobStub]: ...
 

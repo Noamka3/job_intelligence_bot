@@ -19,7 +19,12 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.timezone import utc_now
-from app.ingestion.adapters.base import JobDetails, JobSourceAdapter, JobStub
+from app.ingestion.adapters.base import (
+    JobDetails,
+    JobSourceAdapter,
+    JobStub,
+    JobUnavailableError,
+)
 from app.ingestion.registry import get_adapter, supported_source_types
 from app.models.career_source import CareerSource
 from app.models.company import Company
@@ -97,7 +102,7 @@ def crawl_source(
     }
 
     seen_external_ids: set[str] = set()
-    created = updated = attempted = failed = 0
+    created = updated = attempted = failed = unavailable_closed = 0
 
     for stub in stubs:
         seen_external_ids.add(stub.external_job_id)
@@ -113,6 +118,22 @@ def crawl_source(
         attempted += 1
         try:
             fetched = _fetch_and_embed(adapter, source, stub, existing, embedding_provider)
+        except JobUnavailableError as exc:
+            # The source says this isn't an open job page (gone, or a
+            # listing/category page a generic listing linked to) - not a
+            # failure to retry. Close it if we had stored it as a job.
+            logger.info(
+                "job unavailable at source",
+                extra={
+                    "source_id": source.id,
+                    "external_job_id": stub.external_job_id,
+                    "reason": exc.reason,
+                },
+            )
+            if existing is not None:
+                existing.status = JobStatus.CLOSED
+                unavailable_closed += 1
+            continue
         except Exception as exc:  # noqa: BLE001 - one broken job must not sink the rest of the listing (spec §34)
             logger.warning(
                 "skipping job: fetch/embed failed",
@@ -146,7 +167,7 @@ def crawl_source(
             db, run, source, "AllJobsFailed", f"all {failed} job detail fetches failed"
         )
 
-    closed = _close_missing_jobs(existing_jobs, seen_external_ids)
+    closed = _close_missing_jobs(existing_jobs, seen_external_ids) + unavailable_closed
 
     source.last_successful_check_at = utc_now()
     source.consecutive_failures = 0

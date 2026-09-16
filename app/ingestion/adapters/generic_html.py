@@ -29,20 +29,25 @@ from collections import defaultdict
 from typing import Any
 from urllib.parse import urldefrag, urljoin, urlparse
 
+import httpx
 from bs4 import BeautifulSoup, Tag
 
 from app.ingestion.adapters._http import get_page
 from app.ingestion.adapters._util import parse_timestamp
-from app.ingestion.adapters.base import JobDetails, JobStub
+from app.ingestion.adapters.base import JobDetails, JobStub, JobUnavailableError
 from app.ingestion.adapters.jsonld import _extract_job_postings, _extract_location_text
 from app.ingestion.adapters.jsonld import _map_employment_type as _jsonld_employment_type
 from app.models.career_source import CareerSource
 from app.services.jobs.html_text import html_to_text
+from app.services.jobs.location import classify_country, is_confidently_non_israeli
 
 logger = logging.getLogger(__name__)
 
 _MAX_JOBS_PER_LISTING = 300
 _MAX_DESCRIPTION_CHARS = 20_000
+_LISTING_LINK_THRESHOLD = 5
+_LOCATION_SCAN_LINES = 30
+_APPLY_RE = re.compile(r"apply|submit|הגש|הגישו|מועמדות|שלח(?:ו|/י)? קורות", re.I)
 
 _JOBISH_PATH_RE = re.compile(
     r"job|career|position|vacanc|opening|opportunit|role|משרה|משרות|דרושים|קריירה", re.I
@@ -93,10 +98,20 @@ class GenericHtmlAdapter:
         ]
 
     def fetch_job(self, source: CareerSource, stub: JobStub) -> JobDetails:
-        _, html = get_page(stub.source_url, browser_like=True)
+        try:
+            final_url, html = get_page(stub.source_url, browser_like=True)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code in (404, 410):
+                raise JobUnavailableError(stub.source_url, "job page is gone") from exc
+            raise
         postings = _extract_job_postings(html)
         if postings:
             return _details_from_jsonld(postings[0], stub)
+        if _is_listing_page(html, final_url):
+            # A listing links to what turns out to be another listing
+            # (a recruiting agency's category page, "Explore open jobs
+            # at ..."), not a posting - seen on real sheet pages.
+            raise JobUnavailableError(stub.source_url, "page is a job listing, not a job")
         return _details_from_page(html, stub)
 
 
@@ -234,6 +249,38 @@ def _details_from_jsonld(posting: dict[str, Any], stub: JobStub) -> JobDetails:
     )
 
 
+def _is_listing_page(html: str, page_url: str) -> bool:
+    """A page that itself links to many job pages and offers no way to
+    apply is a listing, not a posting. A real posting with a "more jobs"
+    sidebar still has its apply button/form (Island, Moveo), so those are
+    kept."""
+    if len(extract_job_links(html, page_url)) < _LISTING_LINK_THRESHOLD:
+        return False
+    soup = BeautifulSoup(html, "lxml")
+    if soup.find("form") is not None:
+        return False
+    for anchor in soup.find_all(["a", "button"]):
+        text = anchor.get_text(" ", strip=True)
+        href = anchor.get("href") if anchor.name == "a" else None
+        if _APPLY_RE.search(text) or (isinstance(href, str) and _APPLY_RE.search(href)):
+            return False
+    return True
+
+
+def _guess_location(text: str) -> str | None:
+    """Job pages without structured data usually print the location as a
+    short line of its own near the top ("Remote US", "Rishon LeZion",
+    "Tel Aviv, Israel"); only a line the location vocabulary recognizes
+    is used - never a guess from prose (spec §22)."""
+    for line in text.split("\n")[:_LOCATION_SCAN_LINES]:
+        candidate = line.strip()
+        if not candidate or len(candidate) > 60:
+            continue
+        if classify_country(candidate) == "Israel" or is_confidently_non_israeli(candidate):
+            return candidate
+    return None
+
+
 def _details_from_page(html: str, stub: JobStub) -> JobDetails:
     soup = BeautifulSoup(html, "lxml")
     title = _page_title(soup) or stub.title
@@ -241,11 +288,12 @@ def _details_from_page(html: str, stub: JobStub) -> JobDetails:
     for tag in soup(_STRIP_TAGS):
         tag.decompose()
     container = soup.select_one("main, article, [role=main]") or soup.body or soup
-    description = html_to_text(str(container))[:_MAX_DESCRIPTION_CHARS]
+    text = html_to_text(str(container))
     return JobDetails(
         external_job_id=stub.external_job_id,
         title=title,
-        description=description or None,
+        location_text=_guess_location(text),
+        description=text[:_MAX_DESCRIPTION_CHARS] or None,
         source_url=stub.source_url,
         apply_url=stub.apply_url,
         source_updated_at=None,

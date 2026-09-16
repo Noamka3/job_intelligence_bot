@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import httpx
+import pytest
 import respx
 
-from app.ingestion.adapters.base import JobStub
+from app.ingestion.adapters.base import JobStub, JobUnavailableError
 from app.ingestion.adapters.generic_html import GenericHtmlAdapter, extract_job_links
 from app.models.career_source import CareerSource
 from app.models.enums import CareerSourceType
@@ -127,6 +128,75 @@ def test_card_anchors_use_their_heading_and_cta_anchors_use_the_card_title() -> 
         "Integration Engineer",
         "Systems Analyst",
     ]
+
+
+@respx.mock
+def test_fetch_job_rejects_a_page_that_is_itself_a_listing() -> None:
+    """GotFriends/Intuit-style: the listing linked to a category page or
+    a marketing page listing more jobs - many job links, nothing to apply
+    to. Must not become a "job" row."""
+    listing_like = "".join(
+        f'<li class="p"><a href="/jobs/role-{i}">Backend Developer {i}</a></li>' for i in range(8)
+    )
+    respx.get("https://www.acme.co.il/jobs/category/software").mock(
+        return_value=httpx.Response(
+            200, text=f"<html><body><h1>Software jobs</h1><ul>{listing_like}</ul></body></html>"
+        )
+    )
+    with pytest.raises(JobUnavailableError):
+        GenericHtmlAdapter().fetch_job(
+            _SOURCE,
+            JobStub(
+                external_job_id="cat",
+                title="Software jobs",
+                source_url="https://www.acme.co.il/jobs/category/software",
+            ),
+        )
+
+
+@respx.mock
+def test_fetch_job_keeps_a_real_posting_that_has_a_more_jobs_sidebar() -> None:
+    """Island/Moveo-style: a real posting with an apply button and a
+    sidebar listing every other position."""
+    sidebar = "".join(
+        f'<li class="s"><a href="/positions/position-{i}">Engineer {i}</a></li>' for i in range(8)
+    )
+    respx.get("https://www.acme.co.il/positions/position-1").mock(
+        return_value=httpx.Response(
+            200,
+            text=(
+                f"<html><body><aside><ul>{sidebar}</ul></aside>"
+                "<main><h1>Adoption Specialist</h1><p>Remote US</p><p>Full-time</p>"
+                '<p>Own the rollout.</p><a class="btn" href="#apply-form">Apply for this job</a>'
+                "</main></body></html>"
+            ),
+        )
+    )
+
+    details = GenericHtmlAdapter().fetch_job(
+        _SOURCE,
+        JobStub(
+            external_job_id="p1",
+            title="Adoption Specialist",
+            source_url="https://www.acme.co.il/positions/position-1",
+        ),
+    )
+
+    assert details.title == "Adoption Specialist"
+    assert details.location_text == "Remote US"  # short recognized line near the top
+    assert details.description is not None and "Own the rollout." in details.description
+
+
+@respx.mock
+def test_fetch_job_treats_a_404_as_the_job_being_gone() -> None:
+    respx.get("https://www.acme.co.il/careers/old-role").mock(return_value=httpx.Response(404))
+    with pytest.raises(JobUnavailableError):
+        GenericHtmlAdapter().fetch_job(
+            _SOURCE,
+            JobStub(
+                external_job_id="old", title="Old", source_url="https://www.acme.co.il/careers/old-role"
+            ),
+        )
 
 
 @respx.mock

@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.timezone import utc_now
-from app.ingestion.adapters.base import JobDetails, JobStub
+from app.ingestion.adapters.base import JobDetails, JobStub, JobUnavailableError
 from app.models.career_source import CareerSource
 from app.models.company import Company
 from app.models.enums import CareerSourceType, CrawlRunStatus, JobStatus
@@ -294,6 +294,52 @@ def test_failed_refresh_leaves_the_existing_job_untouched(
     assert job.title == "Old Title"
     assert job.status == JobStatus.ACTIVE  # it was listed, so it's not "missing"
     assert run.jobs_failed == 1
+
+
+class _UnavailableFetchAdapter(_FakeAdapter):
+    def __init__(self, stubs: list[JobStub], details_by_id: dict[str, JobDetails]) -> None:
+        super().__init__(stubs, details_by_id)
+
+    def fetch_job(self, source: CareerSource, stub: JobStub) -> JobDetails:
+        if stub.external_job_id not in self.details_by_id:
+            raise JobUnavailableError(stub.source_url, "page is a job listing, not a job")
+        return super().fetch_job(source, stub)
+
+
+def test_unavailable_job_is_closed_if_stored_and_skipped_if_new_without_failing_the_run(
+    db_session: Session,
+    fake_embedding_provider: FakeEmbeddingProvider,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _make_source(db_session)
+    stubs = [
+        JobStub(external_job_id=i, title=f"Job {i}", source_url=source.source_url)
+        for i in ("real", "category")
+    ]
+    monkeypatch.setattr(
+        ingestion,
+        "get_adapter",
+        lambda _: _FakeAdapter(stubs, {"real": _details("real"), "category": _details("category")}),
+    )
+    ingestion.crawl_source(db_session, source, fake_embedding_provider)
+
+    # Next crawl: the source now says "category" is not a job page.
+    later = _UnavailableFetchAdapter(stubs, {"real": _details("real")})
+    monkeypatch.setattr(ingestion, "get_adapter", lambda _: later)
+    run = ingestion.crawl_source(db_session, source, fake_embedding_provider)
+
+    assert run.status == CrawlRunStatus.SUCCESS
+    assert run.jobs_failed == 0
+    assert run.jobs_closed == 1
+    jobs = {
+        job.external_job_id: job
+        for job in db_session.execute(
+            select(JobPosting).where(JobPosting.career_source_id == source.id)
+        ).scalars()
+    }
+    assert jobs["category"].status == JobStatus.CLOSED
+    assert jobs["real"].status == JobStatus.ACTIVE
+    assert source.consecutive_failures == 0
 
 
 def test_get_due_sources_skips_types_without_an_adapter_and_disabled_companies(
