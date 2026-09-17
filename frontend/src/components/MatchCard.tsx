@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { FeedbackAction, Match } from "../api/types";
-import { DISMISSING_FEEDBACK, SOURCE_LABELS, relativeTime } from "../lib/format";
+import { DISMISSING_FEEDBACK, SOURCE_LABELS, formatDate, relativeTime } from "../lib/format";
+import { CompanyTag } from "./CompanyTag";
 import { FeedbackButtons } from "./FeedbackButtons";
 import { Pill, ScoreBadge } from "./ui";
 
@@ -25,30 +26,29 @@ export function MatchCard({
     }
   }
 
+  const postedAt = match.source_published_at ?? match.first_seen_at;
   const posted = match.source_published_at
-    ? `פורסמה ${relativeTime(match.source_published_at)}`
-    : `נמצאה ${relativeTime(match.first_seen_at)}`;
+    ? `פורסמה ${relativeTime(postedAt)}`
+    : `נמצאה ${relativeTime(postedAt)}`;
 
   return (
     <article className={`card card--interactive match${leaving ? " card--leaving" : ""}`}>
       <ScoreBadge score={match.final_score} />
       <div>
+        <div className="match__top">
+          <CompanyTag name={match.company_name} />
+          <time className="match__time" dateTime={postedAt} title={formatDate(postedAt)}>
+            {posted}
+          </time>
+        </div>
         <h2 className="match__title">
           <Link to={`/jobs/${match.job_id}`} className="bidi">
             {match.job_title}
           </Link>
         </h2>
         <div className="match__meta">
-          <span className="bidi">{match.company_name}</span>
-          {match.location_text && (
-            <>
-              <span className="dot" />
-              <span className="bidi">{match.location_text}</span>
-            </>
-          )}
-          <span className="dot" />
-          <span>{posted}</span>
-          <span className="dot" />
+          {match.location_text && <span className="bidi">{match.location_text}</span>}
+          {match.location_text && <span className="dot" />}
           <span className="faint">{SOURCE_LABELS[match.source_type]}</span>
         </div>
         {(match.reasons.length > 0 || match.concerns.length > 0) && (

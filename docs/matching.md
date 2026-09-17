@@ -45,6 +45,65 @@ threshold (>= 0.7 for reasons, <= 0.3 for concerns) plus every matched/
 missing skill - not raw embedding scores, matching spec §8's explicit
 "do not use embedding similarity itself as the user-facing percentage."
 
+## Matching v2: the role gate and calibrated similarity
+
+The first version summed seven weighted components. Measured on the real
+database (3,100 jobs, the user's real CV) that had two failure modes the
+user noticed immediately:
+
+1. **A perfect job couldn't score above ~79.** Raw cosine similarity from
+   the local MiniLM model spans only 0.15-0.55 for the CV (5th-99th
+   percentile over every match) and 0.10-0.50 for the role intent - even a
+   "Junior Software Engineer" posting sits around 0.43/0.26. At a combined
+   32% weight those components silently cost every job ~20 points.
+2. **Jobs in the wrong field scored 65-72** ("Payment Operations Analyst",
+   "Support Engineer"): junior-friendly, in Israel, fresh, mentioning SQL -
+   the seniority/location/recency/skills points were "free", and role fit
+   was only 15% of the score.
+
+Now:
+
+```
+final     = 100 x role_gate x quality
+role_gate = 0.2 + 0.8 x role_fit
+role_fit  = max(title/keyword role score, 0.6 x calibrated intent similarity)
+            - or just the title/keyword score when the title contains an
+              excluded term
+quality   = 0.45 seniority + 0.30 skills + 0.12 candidate_sim + 0.08 intent_sim
+            + 0.03 location + 0.02 recency
+```
+
+- The **gate** makes "not the role you're looking for" dominate: with no
+  title/keyword/intent match a job keeps at most 20% of its quality, so
+  the payments-analyst opening lands around 35-40 instead of 67.
+- **Calibration** maps raw similarity linearly onto [0, 1] between the
+  measured floor and ceiling (`SEMANTIC_*_FLOOR/CEILING`), so a typical
+  good match reads ~0.7 rather than ~0.4. The stored component scores
+  are the calibrated ones - what the dashboard bars show.
+- **Intent as a role backstop, capped**: a title the keyword lists never
+  anticipated ("Platform Wizard") still passes the gate at up to ~2/3
+  strength when its embedding is close to the target role's; the reason
+  shown is "reads like the target role, even though the title doesn't
+  say so". It is capped at 0.6 because, measured on the live database,
+  the local model's intent similarity barely separates fields: a "Junior
+  Customer Support" posting calibrated to 0.80 while a perfect "Junior
+  Software Engineer" read 0.67, and at the original 0.85 factor almost
+  anything "read like the role" (that support job scored 57%). The
+  user's **excluded terms veto the backstop** entirely: "Software Project
+  Manager" reads like a software role to an embedding, which is exactly
+  why "manager" is excluded.
+- **Titles in Hebrew** only match through aliases/keywords in Hebrew - the
+  matcher is whole-word and language-agnostic, so a target role that
+  should catch "מהנדס/ת BackEnd" or "מפתח/ת Full Stack" needs aliases
+  such as מפתח, מפתחת, מתכנת, מתכנתת, מהנדס תוכנה. Without them such
+  titles only get the capped semantic backstop.
+- **Better embeddings underneath**: single-blob descriptions now lead
+  with their recognizable requirements section (the same heading
+  detection seniority uses), and the local provider embeds long texts in
+  ~220-word chunks and averages the vectors, so page two of a CV and the
+  requirements at the end of a posting count. `python -m app.cli reembed`
+  recomputes every stored vector and rescores after such a change.
+
 ## Weights - and why they differ from the spec's suggested starting point
 
 The spec suggested 30/20/20/10/10/5/5
@@ -63,20 +122,20 @@ At a 10% weight, seniority's own signal - which fires correctly and
 confidently (1.0 for a junior title, 0.05 for a senior one) - couldn't
 overcome that. The weights actually in use:
 
-| Component | Spec's suggestion | In use | Why |
+| Component | Spec's suggestion | In use (v2) | Why |
 |---|---|---|---|
-| candidate_semantic | 30% | 20% | Doesn't discriminate on seniority - see above |
-| intent_semantic | 20% | 12% | Same limitation |
-| skills | 20% | 20% | Unchanged - a real, reliable signal |
-| role | 10% | 15% | Reliable rule-based signal (title/keyword match) - raised |
-| seniority | 10% | 28% | The component that actually solves spec §43's examples - raised substantially |
-| location | 5% | 3% | Still matters, but Israel-only filtering already happens at the API layer (`GET /jobs?israel_only=true`), so this is a smaller tiebreaker here |
-| recency | 5% | 2% | Per spec §27, must never dominate relevance - kept deliberately small |
+| role | 10% | the **gate** (x0.2 … x1.0) | "Is this the role at all" isn't one signal among seven - it decides whether the others count |
+| seniority | 10% | 45% of quality | The component that actually solves spec §43's examples |
+| skills | 20% | 30% of quality | A real, reliable signal |
+| candidate_semantic | 30% | 12% of quality, calibrated | Raw similarity spans only 0.15-0.55 and doesn't discriminate on seniority |
+| intent_semantic | 20% | 8% of quality, calibrated (also feeds the gate) | Same limitation; useful as a backstop for unlisted titles |
+| location | 5% | 3% | Israel-only filtering already happens at the API layer, so this is a tiebreaker |
+| recency | 5% | 2% | Per spec §27, must never dominate relevance |
 
-All seven still sum to 1.0 (enforced by `InvalidWeightsError` in
-`scoring.py`), and every weight is a `WEIGHT_*` env var - the spec's
-"make weights configurable" requirement, not a hardcoded choice bolted on
-for these specific test cases.
+The six quality weights sum to 1.0 (enforced by `InvalidWeightsError` in
+`scoring.py`), and every weight, the gate floor and the calibration
+bounds are env vars - the spec's "make weights configurable"
+requirement, not a hardcoded choice bolted on for these test cases.
 
 ## When scores are (re)computed
 
@@ -92,19 +151,16 @@ for these specific test cases.
   filters on `JobPosting.status = ACTIVE` so a closed job's old 95 never
   ranks first.
 
-## Known limitation: embedding truncation
+## Embedding length
 
-The local model embeds at most ~512 tokens (fastembed enables tokenizer
-truncation unconditionally); longer text is silently cut. For the CV
-that means roughly the first page; for a job it means `title`, team,
-location, skills, and then as much of the description/requirements as
-fits, in that order (`build_embedding_text`). Comeet postings, which
-arrive pre-split, put responsibilities and requirements before the
-general description for that reason; single-blob descriptions
-(Greenhouse, Lever, Ashby, JSON-LD) usually lead with "about us" and can
-lose their requirements to the cut. Chunk-and-average embeddings would
-fix this but change every stored vector; the rule-based components
-(skills, seniority, role) read the *full* text and are unaffected.
+The local model reads ~512 tokens per call. `LocalEmbeddingProvider.
+embed_one` therefore splits longer text into ~220-word chunks, embeds
+each and averages (re-normalized) - the standard long-document approach
+for sentence-transformer models - so a multi-page CV and a long posting
+are represented whole. `build_embedding_text` additionally leads with a
+posting's requirements section when the description is one blob, so the
+part that matters most also gets the most weight. Changing either means
+running `python -m app.cli reembed`.
 
 ## Not yet built (later phases)
 

@@ -1,4 +1,4 @@
-import type { CrawlRunStatus, FeedbackAction, SourceType } from "../api/types";
+import type { ApplicationStatus, CrawlRunStatus, FeedbackAction, SourceType } from "../api/types";
 
 const relative = new Intl.RelativeTimeFormat("he", { numeric: "auto" });
 const dateTime = new Intl.DateTimeFormat("he-IL", { dateStyle: "medium", timeStyle: "short" });
@@ -65,6 +65,41 @@ export const DISMISSING_FEEDBACK: ReadonlySet<FeedbackAction> = new Set([
   "rejected",
 ]);
 
+export const APPLICATION_STATUS_LABELS: Record<ApplicationStatus, string> = {
+  applied: "הגשתי",
+  screening: "סינון טלפוני",
+  interview: "ראיון",
+  assignment: "מטלת בית",
+  offer: "הצעה",
+  rejected: "נדחיתי",
+  withdrawn: "פרשתי",
+};
+
+/** Pipeline order - what the applications page walks through. */
+export const APPLICATION_STATUS_ORDER: ApplicationStatus[] = [
+  "applied",
+  "screening",
+  "interview",
+  "assignment",
+  "offer",
+  "rejected",
+  "withdrawn",
+];
+
+export const CLOSED_APPLICATION_STATUSES: ReadonlySet<ApplicationStatus> = new Set([
+  "rejected",
+  "withdrawn",
+]);
+
+/** "mm:ss" until a moment, or "" once it has passed. */
+export function countdown(iso: string | null, now: number): string {
+  if (!iso) return "";
+  const remaining = Math.max(0, Math.round((new Date(iso).getTime() - now) / 1000));
+  const minutes = Math.floor(remaining / 60);
+  const seconds = remaining % 60;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
 export const RUN_STATUS_LABELS: Record<CrawlRunStatus, string> = {
   running: "רץ",
   success: "הצליח",
@@ -90,4 +125,24 @@ export function extractedSkills(structured: Record<string, unknown>): string[] {
     if (Array.isArray(values)) for (const v of values) if (typeof v === "string") seen.add(v);
   }
   return [...seen];
+}
+
+/** Every section of the structured CV profile, in display order, with a
+ * Hebrew label - so the user can check what the scan understood. */
+export const PROFILE_SECTIONS: { key: string; label: string }[] = [
+  { key: "programming_languages", label: "שפות תכנות" },
+  { key: "frameworks", label: "פריימוורקים וספריות" },
+  { key: "databases", label: "בסיסי נתונים" },
+  { key: "cloud", label: "ענן" },
+  { key: "devops", label: "DevOps וכלים" },
+  { key: "skills", label: "כישורים נוספים" },
+  { key: "domains", label: "תחומים" },
+  { key: "education", label: "השכלה" },
+  { key: "projects", label: "פרויקטים" },
+  { key: "keywords", label: "מילות מפתח" },
+];
+
+export function stringList(structured: Record<string, unknown>, key: string): string[] {
+  const values = structured[key];
+  return Array.isArray(values) ? values.filter((v): v is string => typeof v === "string") : [];
 }

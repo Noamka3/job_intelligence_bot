@@ -264,7 +264,9 @@ def _detect_embedded_ats(body: str) -> ResolvedSource | None:
     token = embed.group(1) if embed else _first_slug(_GREENHOUSE_BOARD_RE, text)
     if token:
         return ResolvedSource(
-            CareerSourceType.GREENHOUSE, token, board_url=f"https://job-boards.greenhouse.io/{token}"
+            CareerSourceType.GREENHOUSE,
+            token,
+            board_url=f"https://job-boards.greenhouse.io/{token}",
         )
 
     client = _first_slug(_LEVER_RE, text)
@@ -311,7 +313,7 @@ def _first_slug(pattern: re.Pattern[str], text: str) -> str | None:
 
 
 def _domain_label(url: str) -> str:
-    """"buildots" for buildots.com, join.jfrog.com -> "jfrog", x.co.il -> "x"."""
+    """ "buildots" for buildots.com, join.jfrog.com -> "jfrog", x.co.il -> "x"."""
     labels = (urlparse(url).hostname or "").lower().split(".")
     if len(labels) >= 3 and labels[-2] in ("co", "com", "org", "net", "ac", "gov"):
         return labels[-3]

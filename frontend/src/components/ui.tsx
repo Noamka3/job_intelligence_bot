@@ -3,13 +3,18 @@ import { scoreTone } from "../lib/format";
 
 export function ScoreBadge({ score, large = false }: { score: number; large?: boolean }) {
   const tone = scoreTone(score);
+  const pct = Math.round(score);
   return (
     <div
       className={`score score--${tone}${large ? " score--large" : ""}`}
+      style={{ "--pct": pct } as React.CSSProperties}
       role="img"
-      aria-label={`ציון התאמה ${Math.round(score)} מתוך 100`}
+      aria-label={`התאמה של ${pct} אחוז`}
     >
-      {Math.round(score)}
+      <span className="score__value">
+        {pct}
+        <span className="score__unit">%</span>
+      </span>
     </div>
   );
 }

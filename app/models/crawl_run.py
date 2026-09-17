@@ -47,6 +47,5 @@ class CrawlRun(Base):
 
     def __repr__(self) -> str:
         return (
-            f"CrawlRun(id={self.id!r}, source_id={self.career_source_id!r}, "
-            f"status={self.status!r})"
+            f"CrawlRun(id={self.id!r}, source_id={self.career_source_id!r}, status={self.status!r})"
         )

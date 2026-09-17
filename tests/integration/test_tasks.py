@@ -13,6 +13,7 @@ from datetime import timedelta
 import pytest
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.timezone import utc_now
 from app.ingestion.adapters.base import JobDetails, JobStub
 from app.models.career_source import CareerSource
@@ -20,7 +21,7 @@ from app.models.company import Company
 from app.models.enums import CareerSourceType
 from app.services.jobs import ingestion
 from app.tasks import crawlers
-from tests.conftest import FakeEmbeddingProvider
+from tests.conftest import FakeEmbeddingProvider, NoCloseSession
 
 
 class _FakeAdapter:
@@ -46,30 +47,51 @@ def _make_source(db: Session) -> CareerSource:
     return source
 
 
-class _NoCloseSessionWrapper:
-    """crawl_one_source/dispatch_due_sources use `with session_factory()
-    as db:`, which calls db.close() on exit - fine in production (a fresh
-    Session per call), but it would detach every object from the shared
-    transactional db_session these tests reuse. This wrapper honors the
-    context-manager protocol without actually closing the real session;
-    the test fixture owns db_session's lifecycle.
-    """
-
-    def __init__(self, db: Session) -> None:
-        self._db = db
-
-    def __enter__(self) -> Session:
-        return self._db
-
-    def __exit__(self, *exc_info: object) -> None:
-        pass
-
-
-def _session_factory_returning(db: Session) -> Callable[[], _NoCloseSessionWrapper]:
-    def factory() -> _NoCloseSessionWrapper:
-        return _NoCloseSessionWrapper(db)
+def _session_factory_returning(db: Session) -> Callable[[], NoCloseSession]:
+    # The tasks use `with session_factory() as db:` - see NoCloseSession.
+    def factory() -> NoCloseSession:
+        return NoCloseSession(db)
 
     return factory
+
+
+@pytest.fixture(autouse=True)
+def _no_real_redis(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The dispatcher reads the real crawl backlog from Redis (the dev
+    Redis may hold hundreds of queued crawls, which would make it dispatch
+    nothing) and writes its heartbeat there (which made the status page
+    show a "tick" every time the suite ran). Tests that care set their own
+    depth."""
+    monkeypatch.setattr(crawlers, "crawl_queue_depth", lambda: 0)
+    monkeypatch.setattr(crawlers, "record_dispatch_tick", lambda: None)
+
+
+def test_dispatch_tops_the_queue_up_to_the_target_and_leaves_the_rest_due(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Demand outstrips two worker processes, so an unbounded dispatcher
+    only ever grew the queue - and re-queued sources whose lease expired
+    while they were still waiting."""
+    source = _make_source(db_session)
+    monkeypatch.setattr(
+        crawlers, "get_session_factory", lambda: _session_factory_returning(db_session)
+    )
+    monkeypatch.setattr(get_settings(), "crawl_queue_target", 40)
+    monkeypatch.setattr(crawlers, "crawl_queue_depth", lambda: 40)
+
+    enqueued: list[int] = []
+    monkeypatch.setattr(
+        crawlers.crawl_one_source, "delay", lambda source_id: enqueued.append(source_id)
+    )
+
+    assert crawlers.dispatch_due_sources() == 0
+    assert enqueued == []
+    db_session.refresh(source)
+    assert source.next_check_at is None  # not leased: still due for the next tick
+
+    monkeypatch.setattr(crawlers, "crawl_queue_depth", lambda: 39)
+    assert crawlers.dispatch_due_sources() == 1  # exactly one slot free
+    assert len(enqueued) == 1
 
 
 def test_dispatch_due_sources_enqueues_one_task_per_due_source(

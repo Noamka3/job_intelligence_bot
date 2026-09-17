@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { PAGE_SIZE, fetchMatches, fetchProfiles, fetchTargetRoles } from "../api/client";
+import {
+  PAGE_SIZE,
+  fetchMatches,
+  fetchProfiles,
+  fetchRegions,
+  fetchTargetRoles,
+} from "../api/client";
 import type { Match, MatchFilters } from "../api/types";
 import { MatchCard } from "../components/MatchCard";
 import { EmptyState, Segmented, Skeletons, Toggle } from "../components/ui";
@@ -10,9 +16,11 @@ const DEFAULT_FILTERS: MatchFilters = {
   minScore: 60,
   days: null,
   targetRoleId: null,
+  region: null,
   israelOnly: true,
   hideDismissed: true,
   query: "",
+  sort: "recent",
 };
 
 export function MatchesPage() {
@@ -23,13 +31,15 @@ export function MatchesPage() {
   const [exhausted, setExhausted] = useState(false);
   const [dismissed, setDismissed] = useState<Set<number>>(new Set());
 
-  // Debounce typing so every keystroke doesn't hit the API.
+  // Debounce typing so every keystroke doesn't hit the API (each query
+  // is also embedded server-side for the semantic half of the search).
   useEffect(() => {
-    const handle = window.setTimeout(() => setFilters((f) => ({ ...f, query })), 250);
+    const handle = window.setTimeout(() => setFilters((f) => ({ ...f, query })), 300);
     return () => window.clearTimeout(handle);
   }, [query]);
 
   const roles = useAsync(fetchTargetRoles, []);
+  const regions = useAsync(fetchRegions, []);
   const profiles = useAsync(fetchProfiles, []);
   const first = useAsync(() => fetchMatches(filters, 0), [filters]);
 
@@ -43,6 +53,7 @@ export function MatchesPage() {
     [first.data, extra, dismissed],
   );
   const hasActiveProfile = (profiles.data ?? []).some((p) => p.is_active);
+  const searching = filters.query.trim().length > 0;
 
   async function loadMore() {
     setLoadingMore(true);
@@ -55,14 +66,18 @@ export function MatchesPage() {
     }
   }
 
+  const subtitle = searching
+    ? "התאמות מדויקות לכותרת/חברה קודם, ואחריהן משרות שקרובות במשמעות למה שכתבת."
+    : filters.sort === "recent"
+      ? "המשרות החדשות ביותר קודם. מתעדכן אוטומטית כל 5 דקות."
+      : "המשרות שהכי מתאימות לקורות החיים ולתפקידי היעד שלך, קודם.";
+
   return (
     <main id="main" className="page">
       <header className="page__header">
         <div>
           <h1 className="page__title">ההתאמות שלך</h1>
-          <p className="page__subtitle">
-            המשרות הפתוחות שהכי מתאימות לקורות החיים ולתפקידי היעד שלך, מתעדכנות כל 5 דקות.
-          </p>
+          <p className="page__subtitle">{subtitle}</p>
         </div>
       </header>
 
@@ -70,19 +85,30 @@ export function MatchesPage() {
         <input
           className="search"
           type="search"
-          placeholder="חיפוש לפי שם משרה או חברה"
+          placeholder="חפש לפי שם, חברה - או תאר במילים שלך מה אתה מחפש"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           aria-label="חיפוש"
         />
+        {!searching && (
+          <Segmented
+            label="מיון"
+            value={filters.sort}
+            options={[
+              { value: "recent", label: "חדשות קודם" },
+              { value: "score", label: "התאמה קודם" },
+            ]}
+            onChange={(sort) => setFilters((f) => ({ ...f, sort }))}
+          />
+        )}
         <Segmented
-          label="ציון מינימלי"
+          label="התאמה מינימלית"
           value={filters.minScore}
           options={[
             { value: 0, label: "הכל" },
-            { value: 60, label: "60+" },
-            { value: 70, label: "70+" },
-            { value: 80, label: "80+" },
+            { value: 60, label: "60%+" },
+            { value: 75, label: "75%+" },
+            { value: 85, label: "85%+" },
           ]}
           onChange={(minScore) => setFilters((f) => ({ ...f, minScore }))}
         />
@@ -97,6 +123,19 @@ export function MatchesPage() {
           ]}
           onChange={(days) => setFilters((f) => ({ ...f, days }))}
         />
+        <select
+          className="select"
+          aria-label="אזור"
+          value={filters.region ?? ""}
+          onChange={(e) => setFilters((f) => ({ ...f, region: e.target.value || null }))}
+        >
+          <option value="">כל הארץ</option>
+          {Object.entries(regions.data ?? {}).map(([key, label]) => (
+            <option key={key} value={key}>
+              {label}
+            </option>
+          ))}
+        </select>
         {(roles.data?.length ?? 0) > 1 && (
           <select
             className="select"
@@ -150,7 +189,7 @@ export function MatchesPage() {
         </EmptyState>
       ) : matches.length === 0 ? (
         <EmptyState title="אין התאמות בפילטרים האלה">
-          נסה להוריד את הציון המינימלי או להרחיב את טווח הזמן.
+          נסה להוריד את סף ההתאמה, להרחיב את טווח הזמן או לבחור "כל הארץ".
         </EmptyState>
       ) : (
         <div className="stack" aria-live="polite">

@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 from app.db.session import get_session_factory
 from app.models.career_source import CareerSource
 from app.models.company import Company
+from app.models.enums import JobStatus
 from app.services.candidate.normalization import normalize_text
 from app.services.candidate.profile_service import get_active_profile
 from app.services.candidate.structured_profile import extract_structured_profile
@@ -84,6 +85,28 @@ def reresolve_sources() -> None:
     )
     for source_type, count in by_type:
         typer.echo(f"  {source_type.value:16} {count}")
+
+
+@app.command("reclassify-locations")
+def reclassify_locations() -> None:
+    """Recompute country + region for every job from its stored location
+    text - after the location vocabulary changes, so existing rows get
+    the same classification a fresh crawl would give them.
+    """
+    from app.models.job_posting import JobPosting
+    from app.services.jobs.location import classify_country, classify_region
+
+    session_factory = get_session_factory()
+    with session_factory() as db:
+        changed = 0
+        for job in db.execute(select(JobPosting)).scalars():
+            country = classify_country(job.location_text)
+            region = classify_region(job.location_text)
+            if (job.country, job.region) != (country, region):
+                job.country, job.region = country, region
+                changed += 1
+        db.commit()
+    typer.echo(f"Reclassified {changed} job(s).")
 
 
 @app.command("rebuild-profile")
@@ -166,6 +189,62 @@ def crawl_company(name: str) -> None:
             )
         if not found:
             typer.echo(f"{company.name} has no enabled career sources.")
+
+
+@app.command("reembed")
+def reembed() -> None:
+    """Recompute every embedding (active CV, enabled target roles, all
+    ACTIVE jobs) with the current provider and embedding-text rules, then
+    rescore. Run after changing the embedding model, the chunking, or
+    build_embedding_text - stored vectors don't update on their own
+    because the jobs' content didn't change.
+    """
+    from app.ingestion.adapters.base import JobDetails
+    from app.models.job_posting import JobPosting
+    from app.models.target_role import TargetRole
+    from app.services.jobs.normalization import build_embedding_text, content_hash_for
+    from app.services.target_roles import _build_embedding_text as role_embedding_text
+
+    provider = get_embedding_provider()
+    session_factory = get_session_factory()
+    with session_factory() as db:
+        profile = get_active_profile(db)
+        if profile is not None:
+            profile.embedding = provider.embed_one(profile.normalized_text)
+        for role in db.execute(select(TargetRole).where(TargetRole.enabled.is_(True))).scalars():
+            role.embedding = provider.embed_one(role_embedding_text(role))
+        db.commit()
+
+        jobs = db.execute(select(JobPosting).where(JobPosting.status == JobStatus.ACTIVE)).scalars()
+        done = 0
+        for job in jobs:
+            details = JobDetails(
+                external_job_id=job.external_job_id,
+                title=job.title,
+                department=job.department,
+                team=job.team,
+                location_text=job.location_text,
+                remote_type=job.remote_type,
+                employment_type=job.employment_type,
+                description=job.description,
+                responsibilities=job.responsibilities,
+                qualifications=job.qualifications,
+                required_skills=job.required_skills,
+                preferred_skills=job.preferred_skills,
+                source_url=job.source_url,
+                apply_url=job.apply_url,
+            )
+            text = build_embedding_text(details)
+            job.embedding = provider.embed_one(text)
+            job.content_hash = content_hash_for(text)
+            done += 1
+            if done % 100 == 0:
+                db.commit()
+                typer.echo(f"  re-embedded {done} jobs...")
+        db.commit()
+        typer.echo(f"Re-embedded {done} active jobs; rescoring...")
+        matches = score_all_active_jobs(db)
+    typer.echo(f"Done - {matches} matches recomputed.")
 
 
 @app.command("score-all")

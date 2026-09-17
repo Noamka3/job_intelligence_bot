@@ -95,6 +95,34 @@ def test_locations_seen_on_real_generic_and_board_pages_are_non_israeli(
     assert is_confidently_non_israeli(location_text) is True
 
 
+@pytest.mark.parametrize(
+    ("location_text", "region"),
+    [
+        ("Tel Aviv-Yafo, Tel Aviv District, Israel", "tel_aviv"),
+        ("Ramat Gan", "tel_aviv"),
+        ("Herzliya, Israel", "sharon"),
+        ("Israel, Petah Tikva", "center"),
+        ("Rishon LeTsiyon", "center"),
+        ("Caesarea, Haifa, Israel", "haifa"),
+        ("Israel, Kiryat-Gat", "south"),
+        ("Beer Sheva", "south"),
+        ("Jerusalem", "jerusalem"),
+        ("Yokneam", "north"),
+        ("באר שבע", "south"),
+        ("Israel", None),
+        ("Warsaw, Poland", None),
+        (None, None),
+    ],
+)
+def test_classify_region(location_text: str | None, region: str | None) -> None:
+    from app.services.jobs.location import REGIONS, classify_region
+
+    assert classify_region(location_text) == region
+    if region is not None:
+        assert region in REGIONS
+        assert classify_country(location_text) == "Israel"
+
+
 def test_sql_regex_uses_the_same_vocabulary_as_the_python_check() -> None:
     from app.services.jobs.location import (
         NON_ISRAEL_LOCATION_HINTS,

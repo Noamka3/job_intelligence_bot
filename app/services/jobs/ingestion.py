@@ -32,7 +32,7 @@ from app.models.crawl_run import CrawlRun
 from app.models.enums import CrawlRunStatus, JobStatus
 from app.models.job_posting import JobPosting
 from app.services.embeddings.base import EmbeddingProvider
-from app.services.jobs.location import classify_country
+from app.services.jobs.location import classify_country, classify_region
 from app.services.jobs.normalization import (
     build_embedding_text,
     build_normalized_description,
@@ -45,11 +45,12 @@ from app.services.matching.runner import score_job
 logger = logging.getLogger(__name__)
 
 
-def get_due_sources(db: Session) -> list[CareerSource]:
+def get_due_sources(db: Session, limit: int | None = None) -> list[CareerSource]:
     """Enabled sources that have never been crawled, or are past their own
     next_check_at - the dispatch query Celery Beat uses every 5 minutes
     (spec §19), reused by the CLI/API manual trigger so it behaves
-    identically.
+    identically. Longest-overdue first (never crawled before anything
+    else), so a `limit` hands out the backlog fairly across ticks.
 
     Source types without a registered adapter yet (workday, generic_html,
     ... until Phase 8) are left out on purpose: crawling them would only
@@ -69,7 +70,10 @@ def get_due_sources(db: Session) -> list[CareerSource]:
             CareerSource.source_type.in_(supported_source_types()),
             (CareerSource.next_check_at.is_(None)) | (CareerSource.next_check_at <= now),
         )
+        .order_by(CareerSource.next_check_at.asc().nulls_first(), CareerSource.id)
     )
+    if limit is not None:
+        query = query.limit(limit)
     return list(db.execute(query).scalars())
 
 
@@ -259,6 +263,7 @@ def _create_job(db: Session, source: CareerSource, fetched: _FetchedJob) -> JobP
         location_text=details.location_text,
         normalized_location=normalize_location(details.location_text),
         country=classify_country(details.location_text),
+        region=classify_region(details.location_text),
         remote_type=details.remote_type,
         employment_type=details.employment_type,
         description=details.description,
@@ -300,6 +305,7 @@ def _apply_update(existing: JobPosting, fetched: _FetchedJob) -> bool:
     existing.location_text = details.location_text
     existing.normalized_location = normalize_location(details.location_text)
     existing.country = classify_country(details.location_text)
+    existing.region = classify_region(details.location_text)
     existing.remote_type = details.remote_type
     existing.employment_type = details.employment_type
     existing.description = details.description

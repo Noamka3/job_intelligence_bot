@@ -15,10 +15,26 @@ from sqlalchemy import event
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.db.session import get_db, get_engine
+from app.db.session import get_background_session_factory, get_db, get_engine
 from app.main import app
 from app.models.constants import EMBEDDING_DIM
 from app.services.embeddings import get_embedding_provider
+
+
+class NoCloseSession:
+    """A context manager handing out an existing Session without closing
+    it on exit - lets code written as `with session_factory() as db:`
+    (Celery tasks, FastAPI background tasks) run inside a test's single
+    rolled-back transaction instead of opening a real one of its own."""
+
+    def __init__(self, db: Session) -> None:
+        self._db = db
+
+    def __enter__(self) -> Session:
+        return self._db
+
+    def __exit__(self, *exc_info: object) -> None:
+        pass
 
 
 class FakeEmbeddingProvider:
@@ -64,11 +80,17 @@ def api_client(
 
     app.dependency_overrides[get_db] = _get_db_override
     app.dependency_overrides[get_embedding_provider] = lambda: fake_embedding_provider
+    # Background tasks (post-upload extraction/rescoring) run inside the
+    # TestClient call, on this same transactional session.
+    app.dependency_overrides[get_background_session_factory] = lambda: (
+        lambda: NoCloseSession(db_session)
+    )
     try:
         yield TestClient(app)
     finally:
         app.dependency_overrides.pop(get_db, None)
         app.dependency_overrides.pop(get_embedding_provider, None)
+        app.dependency_overrides.pop(get_background_session_factory, None)
 
 
 @pytest.fixture

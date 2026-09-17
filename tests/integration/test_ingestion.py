@@ -228,9 +228,7 @@ def test_one_job_failing_to_fetch_does_not_sink_the_rest(
         JobStub(external_job_id=i, title=f"Job {i}", source_url=source.source_url)
         for i in ("1", "2", "3")
     ]
-    adapter = _FailingFetchAdapter(
-        stubs, {"1": _details("1"), "3": _details("3")}, failing={"2"}
-    )
+    adapter = _FailingFetchAdapter(stubs, {"1": _details("1"), "3": _details("3")}, failing={"2"})
     monkeypatch.setattr(ingestion, "get_adapter", lambda _: adapter)
 
     run = ingestion.crawl_source(db_session, source, fake_embedding_provider)

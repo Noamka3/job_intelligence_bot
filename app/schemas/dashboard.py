@@ -53,6 +53,10 @@ class DashboardStatsRead(BaseModel):
     matches: int
     jobs_discovered_24h: int
     last_crawl_at: datetime | None
+    last_dispatch_at: datetime | None
+    next_dispatch_at: datetime | None
+    poll_interval_minutes: int
+    crawl_queue_depth: int | None
     runs_last_hour: int
     failed_runs_last_hour: int
     by_source_type: list[SourceTypeStatRead]

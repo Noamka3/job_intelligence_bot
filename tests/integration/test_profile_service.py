@@ -25,7 +25,9 @@ def _no_real_llm_extraction(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> 
     monkeypatch.setattr(
         profile_service,
         "extract_structured_profile",
-        lambda text: StructuredCandidateProfile(seniority="junior"),
+        lambda text: StructuredCandidateProfile(
+            seniority="junior", programming_languages=["Python"]
+        ),
     )
     monkeypatch.setattr(profile_service, "RESUME_STORAGE_DIR", tmp_path)
 
@@ -47,10 +49,21 @@ def test_ingest_resume_creates_active_profile(
         db_session, filename="cv.docx", content=content, embedding_provider=fake_embedding_provider
     )
 
+    # The fast half: parsed, embedded, active - but not yet extracted/scored.
     assert profile.is_active is True
     assert profile.version == 1
-    assert profile.structured_profile["seniority"] == "junior"
+    assert profile.processing_status == profile_service.PROCESSING_PENDING
+    assert profile.structured_profile == {}
     assert "Jane Doe" in profile.raw_text
+    assert profile.embedding is not None
+
+    profile_service.finish_profile_processing(db_session, profile.id)
+
+    db_session.refresh(profile)
+    assert profile.processing_status == profile_service.PROCESSING_DONE
+    assert profile.processing_note is None
+    assert profile.structured_profile["seniority"] == "junior"
+    assert profile.structured_profile["programming_languages"] == ["Python"]
 
 
 def test_ingest_resume_deactivates_previous_and_bumps_version(
@@ -162,8 +175,16 @@ def test_ingest_resume_saves_successfully_when_structured_extraction_fails(
         content=_docx_bytes("Jane Doe - Junior Software Engineer"),
         embedding_provider=fake_embedding_provider,
     )
+    profile_service.finish_profile_processing(db_session, profile.id)
 
+    db_session.refresh(profile)
     assert profile.is_active is True
-    assert profile.structured_profile == StructuredCandidateProfile().model_dump()
+    assert profile.processing_status == profile_service.PROCESSING_DONE
+    assert profile.processing_note is not None
+    assert type(error).__name__ in profile.processing_note
+    # The model's lists are empty, but the rules still decided the level.
+    assert profile.structured_profile["programming_languages"] == []
+    assert profile.structured_profile["seniority"] == "junior"
+    assert profile.structured_profile["years_of_experience"] == 0.0
     assert "Jane Doe" in profile.raw_text
     assert profile.embedding is not None

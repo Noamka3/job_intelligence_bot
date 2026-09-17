@@ -80,8 +80,7 @@ def resync_companies_from_stored_urls(db: Session) -> SheetSyncResult:
     """
     companies = db.execute(select(Company).where(Company.enabled.is_(True))).scalars()
     rows = [
-        CompanySheetRow(name=company.name, url=company.original_sheet_url)
-        for company in companies
+        CompanySheetRow(name=company.name, url=company.original_sheet_url) for company in companies
     ]
     return sync_companies(db, rows)
 

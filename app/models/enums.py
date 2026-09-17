@@ -70,6 +70,18 @@ class JobFeedbackAction(enum.StrEnum):
     REJECTED = "rejected"
 
 
+class ApplicationStatus(enum.StrEnum):
+    """Where an application the user actually sent stands."""
+
+    APPLIED = "applied"
+    SCREENING = "screening"
+    INTERVIEW = "interview"
+    ASSIGNMENT = "assignment"
+    OFFER = "offer"
+    REJECTED = "rejected"
+    WITHDRAWN = "withdrawn"
+
+
 class NotificationChannel(enum.StrEnum):
     CONSOLE = "console"
     WHATSAPP = "whatsapp"

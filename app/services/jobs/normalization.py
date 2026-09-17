@@ -10,6 +10,7 @@ import hashlib
 
 from app.ingestion.adapters.base import JobDetails
 from app.models.enums import EmploymentType
+from app.services.matching.seniority import requirements_section
 from app.services.text_normalization import normalize_whitespace
 
 # Lines containing any of these (case-insensitive) are dropped before
@@ -60,6 +61,14 @@ def build_embedding_text(details: JobDetails) -> str:
 
     normalized_description = build_normalized_description(details)
     if normalized_description:
+        # A single-blob description usually opens with "about us" and
+        # buries the requirements at the end - past where the embedding
+        # model stops reading. Lead with the requirements section when
+        # one is recognizable, then the whole text.
+        if not (details.responsibilities or details.qualifications):
+            requirements = requirements_section(normalized_description)
+            if requirements != normalized_description:
+                parts.append(requirements)
         parts.append(normalized_description)
 
     return "\n".join(parts)

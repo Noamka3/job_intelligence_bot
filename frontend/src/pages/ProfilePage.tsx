@@ -1,16 +1,17 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   activateProfile,
   createTargetRole,
+  fetchProfileText,
   fetchProfiles,
   fetchTargetRoles,
   updateTargetRole,
   uploadResume,
 } from "../api/client";
-import type { TargetRole } from "../api/types";
+import type { CandidateProfile, CandidateProfileText, TargetRole } from "../api/types";
 import { EmptyState, Pill, Skeletons, Toggle } from "../components/ui";
 import { useAsync } from "../hooks/useAsync";
-import { extractedSkills, formatDateTime, relativeTime } from "../lib/format";
+import { PROFILE_SECTIONS, formatDateTime, relativeTime, stringList } from "../lib/format";
 
 const splitList = (value: string) =>
   value
@@ -21,6 +22,15 @@ const splitList = (value: string) =>
 export function ProfilePage() {
   const profiles = useAsync(fetchProfiles, []);
   const roles = useAsync(fetchTargetRoles, []);
+
+  // While the active profile is still being processed in the background
+  // (LLM extraction + rescoring every job), keep asking until it's done.
+  const pending = (profiles.data ?? []).some((p) => p.is_active && p.processing_status === "pending");
+  useEffect(() => {
+    if (!pending) return;
+    const handle = window.setInterval(profiles.reload, 3000);
+    return () => window.clearInterval(handle);
+  }, [pending, profiles.reload]);
 
   return (
     <main id="main" className="page">
@@ -53,7 +63,7 @@ function ResumeSection({
   loading,
   onChanged,
 }: {
-  profiles: { id: number; version: number; filename: string; is_active: boolean; activated_at: string | null; created_at: string; structured_profile: Record<string, unknown> }[];
+  profiles: CandidateProfile[];
   loading: boolean;
   onChanged: () => void;
 }) {
@@ -61,13 +71,20 @@ function ResumeSection({
   const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
   const [dragging, setDragging] = useState(false);
   const active = profiles.find((p) => p.is_active);
+  const processing = active?.processing_status === "pending";
 
   async function upload(file: File) {
     setBusy(true);
     setMessage(null);
     try {
-      await uploadResume(file);
-      setMessage({ ok: true, text: "קורות החיים נקלטו, וכל המשרות חושבו מחדש." });
+      const profile = await uploadResume(file);
+      const known = profiles.some((p) => p.id === profile.id);
+      setMessage({
+        ok: true,
+        text: known
+          ? "הקובץ הזה כבר במערכת - הופעל מחדש. ההתאמות מתעדכנות ברקע."
+          : "הקובץ נקרא ונשמר. עכשיו מחלץ פרופיל ומחשב מחדש את כל המשרות - זה רץ ברקע.",
+      });
       onChanged();
     } catch (err) {
       setMessage({ ok: false, text: err instanceof Error ? err.message : "ההעלאה נכשלה" });
@@ -91,26 +108,46 @@ function ResumeSection({
   return (
     <div className="stack">
       {active ? (
-        <div className="card">
-          <div className="row" style={{ justifyContent: "space-between" }}>
-            <div>
-              <strong className="bidi">{active.filename}</strong>
-              <div className="faint">
-                גרסה {active.version} · הופעלה {relativeTime(active.activated_at)}
+        <>
+          <div className="card">
+            <div className="row" style={{ justifyContent: "space-between" }}>
+              <div>
+                <strong className="bidi">{active.filename}</strong>
+                <div className="faint">
+                  גרסה {active.version} · הופעלה {relativeTime(active.activated_at)}
+                </div>
               </div>
+              {processing ? (
+                <Pill tone="accent">מעבד ברקע…</Pill>
+              ) : active.processing_status === "failed" ? (
+                <Pill tone="bad">העיבוד נכשל</Pill>
+              ) : (
+                <Pill tone="good">פעיל</Pill>
+              )}
             </div>
-            <Pill tone="good">פעיל</Pill>
+            {processing && (
+              <div className="alert alert--ok" role="status" style={{ marginTop: 12 }}>
+                <span className="pulse" aria-hidden="true" /> הקובץ נקרא ונשמר. עכשיו רץ חילוץ
+                הפרופיל (מודל שפה מקומי) ואחריו דירוג מחדש של כל המשרות - בדרך כלל 1-3 דקות.
+                העמוד יתעדכן לבד.
+              </div>
+            )}
+            {active.processing_status === "failed" && (
+              <div className="alert" role="alert" style={{ marginTop: 12 }}>
+                {active.processing_note ?? "העיבוד נכשל"} - ההתאמות עדיין עובדות על הטקסט
+                המלא.
+              </div>
+            )}
+            {active.processing_status === "done" && active.processing_note && (
+              <div className="faint" style={{ marginTop: 8 }}>
+                {active.processing_note}
+              </div>
+            )}
           </div>
-          {extractedSkills(active.structured_profile).length > 0 && (
-            <div className="match__tags">
-              {extractedSkills(active.structured_profile)
-                .slice(0, 30)
-                .map((skill) => (
-                  <Pill key={skill}>{skill}</Pill>
-                ))}
-            </div>
+          {!processing && (
+            <ScanExplainer profileId={active.id} structured={active.structured_profile} />
           )}
-        </div>
+        </>
       ) : (
         <EmptyState title="עוד אין קורות חיים">העלה PDF או DOCX כדי להתחיל לקבל התאמות.</EmptyState>
       )}
@@ -141,9 +178,12 @@ function ResumeSection({
           }}
         />
         <div style={{ fontWeight: 600, color: "var(--text)" }}>
-          {busy ? "מעלה ומחשב מחדש…" : "גרור לכאן קורות חיים חדשים, או לחץ לבחירה"}
+          {busy ? "קורא את הקובץ…" : "גרור לכאן קורות חיים חדשים, או לחץ לבחירה"}
         </div>
-        <div className="faint">PDF או DOCX, עד 10MB. גרסאות קודמות נשמרות.</div>
+        <div className="faint">
+          PDF או DOCX, עד 10MB. גרסאות קודמות נשמרות. הקריאה לוקחת שניות; החילוץ והדירוג
+          ממשיכים ברקע.
+        </div>
       </label>
 
       {message && (
@@ -190,6 +230,114 @@ function ResumeSection({
         </div>
       )}
     </div>
+  );
+}
+
+function ScanExplainer({
+  profileId,
+  structured,
+}: {
+  profileId: number;
+  structured: Record<string, unknown>;
+}) {
+  const [text, setText] = useState<CandidateProfileText | null>(null);
+  const [loadingText, setLoadingText] = useState(false);
+  const sections = PROFILE_SECTIONS.map((s) => ({ ...s, values: stringList(structured, s.key) }))
+    .filter((s) => s.values.length > 0);
+  const years = structured["years_of_experience"];
+  const seniority = structured["seniority"];
+
+  async function showText() {
+    if (text) return;
+    setLoadingText(true);
+    try {
+      setText(await fetchProfileText(profileId));
+    } finally {
+      setLoadingText(false);
+    }
+  }
+
+  return (
+    <>
+      <div className="card">
+        <h3 style={{ margin: "0 0 12px", fontSize: 17 }}>מה הבוט עושה עם קורות החיים שלך</h3>
+        <ol className="steps" style={{ margin: 0, padding: 0, listStyle: "none" }}>
+          <li className="step">
+            <div>
+              <strong>קורא את הטקסט מהקובץ</strong>
+              PDF או DOCX. רק טקסט - תמונות, טבלאות מורכבות ועיצוב לא נקראים. הטקסט המלא
+              שנקרא מוצג למטה.
+            </div>
+          </li>
+          <li className="step">
+            <div>
+              <strong>מחלץ פרופיל מובנה</strong>
+              מודל שפה מקומי (חינמי, רץ על המחשב) מעתיק מהטקסט שפות תכנות, פריימוורקים, בסיסי
+              נתונים, השכלה ופרויקטים. הוותק לא נקבע על ידי המודל אלא לפי כלל: קורות חיים בלי
+              פרק "ניסיון תעסוקתי" = ג'וניור, 0 שנים; עם פרק כזה המודל מעריך את השנים. זה שכבת
+              עזר - אם משהו חסר כאן, ההתאמה עדיין משתמשת בטקסט המלא.
+            </div>
+          </li>
+          <li className="step">
+            <div>
+              <strong>מחשב "טביעת אצבע" סמנטית</strong>
+              הטקסט המלא הופך לווקטור (embedding) שמשווים לכל משרה - לפי משמעות, לא לפי מילים
+              זהות. קורות חיים ארוכים נקראים בחלקים כדי שדף שני ושלישי ייספרו.
+            </div>
+          </li>
+          <li className="step">
+            <div>
+              <strong>מדרג כל משרה</strong>
+              רמת הוותק שהמשרה דורשת, חפיפת כישורים, דמיון סמנטי, מיקום וטריות - עם התאמת
+              התפקיד כשער. הפירוט המלא מופיע בעמוד של כל משרה.
+            </div>
+          </li>
+        </ol>
+      </div>
+
+      <div className="card">
+        <h3 style={{ margin: "0 0 4px", fontSize: 17 }}>מה הסריקה הבינה</h3>
+        <p className="faint" style={{ margin: "0 0 12px" }}>
+          תעבור על זה בעין: אם כישור חשוב חסר, כדאי שיופיע במפורש בקורות החיים.
+        </p>
+        {(typeof years === "number" || typeof seniority === "string") && (
+          <div className="row" style={{ marginBottom: 12 }}>
+            {typeof years === "number" && <Pill tone="accent">{years} שנות ניסיון</Pill>}
+            {typeof seniority === "string" && <Pill tone="accent">רמה: {seniority}</Pill>}
+          </div>
+        )}
+        {sections.length === 0 ? (
+          <div className="alert" role="status">
+            החילוץ המובנה חזר ריק - המודל המקומי לא הצליח (או לא רץ). ההתאמות עדיין עובדות על
+            הטקסט המלא; אפשר להריץ שוב עם <code>python -m app.cli rebuild-profile</code>.
+          </div>
+        ) : (
+          <div className="stack" style={{ gap: 10 }}>
+            {sections.map((section) => (
+              <div key={section.key}>
+                <div className="faint" style={{ marginBottom: 4 }}>
+                  {section.label}
+                </div>
+                <div className="match__tags" style={{ marginTop: 0 }}>
+                  {section.values.slice(0, 40).map((value) => (
+                    <Pill key={value}>{value}</Pill>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        <details className="raw" style={{ marginTop: 16 }} onToggle={(e) => e.currentTarget.open && void showText()}>
+          <summary>הטקסט המלא שנקרא מהקובץ</summary>
+          {loadingText && <div className="faint">טוען…</div>}
+          {text && (
+            <div className="raw__text bidi" dir="auto">
+              {text.raw_text}
+            </div>
+          )}
+        </details>
+      </div>
+    </>
   );
 }
 
@@ -276,6 +424,10 @@ function RolesSection({
         </div>
       ))}
 
+      <p className="faint" style={{ margin: 0 }}>
+        כל שינוי כאן מחשב מחדש את ההתאמות ברקע (כדקה-שתיים) - הרשימה ב"התאמות" תתעדכן
+        לבד.
+      </p>
       {showForm ? (
         <form className="card stack" onSubmit={submit}>
           <div className="form-grid">

@@ -88,6 +88,69 @@ def test_compute_match_zero_scores_yield_0(monkeypatch: pytest.MonkeyPatch) -> N
     assert result.final_score == 0.0
 
 
+def test_wrong_role_is_gated_even_when_everything_else_is_perfect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A junior-friendly, well-located payments-analyst job that mentions
+    one skill you have used to score ~67. It isn't the role."""
+    monkeypatch.setattr(scoring, "cosine_similarity", lambda a, b: 0.2)  # calibrates to ~0.1-0.25
+    monkeypatch.setattr(scoring, "score_skills", lambda c, j: (1.0, ["sql"], []))
+    monkeypatch.setattr(scoring, "score_role", lambda *a: (0.3, "no direct title/keyword match"))
+    monkeypatch.setattr(scoring, "score_seniority", lambda *a: (1.0, "junior signal"))
+    monkeypatch.setattr(scoring, "score_location", lambda *a: (1.0, "in Israel"))
+    monkeypatch.setattr(scoring, "score_recency", lambda *a: (1.0, "fresh"))
+
+    result = scoring.compute_match(_candidate(), _target_role(), _job(title="Payments Analyst"))
+
+    assert result.final_score < 45
+    assert "doesn't look like the role you're looking for" in result.concerns
+
+
+def test_strong_intent_similarity_can_stand_in_for_an_unlisted_title(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(scoring, "cosine_similarity", lambda a, b: 0.5)  # near the ceiling
+    monkeypatch.setattr(scoring, "score_skills", lambda c, j: (1.0, [], []))
+    monkeypatch.setattr(scoring, "score_role", lambda *a: (0.3, "no direct title/keyword match"))
+    monkeypatch.setattr(scoring, "score_seniority", lambda *a: (1.0, "junior signal"))
+    monkeypatch.setattr(scoring, "score_location", lambda *a: (1.0, "in Israel"))
+    monkeypatch.setattr(scoring, "score_recency", lambda *a: (1.0, "fresh"))
+
+    result = scoring.compute_match(_candidate(), _target_role(), _job(title="Platform Wizard"))
+
+    # A backstop, not a full match: the gate opens to ~2/3, never fully.
+    assert result.role_score == pytest.approx(0.6)
+    assert 60 < result.final_score < 75
+    assert any("reads like the target role" in reason for reason in result.reasons)
+
+
+def test_an_excluded_term_vetoes_the_semantic_rescue(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Live: "Software Project Manager" scored 44% and "Junior Customer
+    Support" 57% because their embeddings read like the role - the
+    excluded term must win."""
+    monkeypatch.setattr(scoring, "cosine_similarity", lambda a, b: 0.5)  # near the ceiling
+    monkeypatch.setattr(scoring, "score_skills", lambda c, j: (1.0, [], []))
+    monkeypatch.setattr(scoring, "score_seniority", lambda *a: (1.0, "junior signal"))
+    monkeypatch.setattr(scoring, "score_location", lambda *a: (1.0, "in Israel"))
+    monkeypatch.setattr(scoring, "score_recency", lambda *a: (1.0, "fresh"))
+    role = _target_role(negative_keywords=["manager", "support"])
+
+    result = scoring.compute_match(_candidate(), role, _job(title="Software Project Manager"))
+
+    assert result.role_score == pytest.approx(0.1)
+    assert result.final_score < 30
+    assert any("excluded term" in concern for concern in result.concerns)
+    assert not any("reads like the target role" in reason for reason in result.reasons)
+
+
+def test_calibrate_maps_the_models_real_range_onto_0_1() -> None:
+    assert scoring.calibrate(0.15, 0.15, 0.55) == 0.0
+    assert scoring.calibrate(0.55, 0.15, 0.55) == 1.0
+    assert scoring.calibrate(0.35, 0.15, 0.55) == pytest.approx(0.5)
+    assert scoring.calibrate(0.9, 0.15, 0.55) == 1.0  # clamped
+    assert scoring.calibrate(0.4, 0.5, 0.5) == 0.4  # degenerate range: identity
+
+
 def test_compute_match_missing_embeddings_fall_back_to_neutral() -> None:
     candidate = _candidate(embedding=None)
     target_role = _target_role(embedding=None)
@@ -115,7 +178,6 @@ def test_invalid_weights_raise_a_clear_error() -> None:
         weight_candidate_semantic=0.5,
         weight_intent_semantic=0.5,
         weight_skills=0.5,
-        weight_role=0.1,
         weight_seniority=0.1,
         weight_location=0.1,
         weight_recency=0.1,

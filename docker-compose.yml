@@ -75,10 +75,17 @@ services:
     build: .
     container_name: job_bot_beat
     restart: unless-stopped
+    # A worker with Beat embedded (--beat) that consumes only the
+    # "scheduler" queue, i.e. it runs dispatch_due_sources itself the
+    # moment Beat fires it. On the shared queue the dispatcher waited
+    # behind every crawl queued before it - after a pause that's hundreds
+    # - so the status page's countdown ran late for an hour. The
+    # dispatcher never embeds anything, so this container stays small
+    # (--pool=solo: one thread, no forked model copies).
     # --schedule: beat persists its state file next to wherever it runs
     # (/app, root-owned in the image) unless told otherwise; the image
     # runs as a non-root user.
-    command: celery -A app.tasks.celery_app beat --loglevel=info --schedule=/home/app/celerybeat-schedule
+    command: celery -A app.tasks.celery_app worker --beat --queues=scheduler --pool=solo --concurrency=1 --loglevel=info --schedule=/home/app/celerybeat-schedule
     environment:
       DATABASE_URL: postgresql+psycopg://job_bot:job_bot@postgres:5432/job_bot
       REDIS_URL: redis://redis:6379/0

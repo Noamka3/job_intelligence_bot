@@ -3,16 +3,19 @@ from __future__ import annotations
 import hashlib
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.candidate_profile import CandidateProfile
 from app.models.career_source import CareerSource
 from app.models.company import Company
+from app.models.constants import EMBEDDING_DIM
 from app.models.enums import CareerSourceType, JobStatus
 from app.models.job_match import JobMatch
 from app.models.job_posting import JobPosting
 from app.models.target_role import TargetRole
 from app.services.jobs.location import classify_country
+from tests.conftest import FakeEmbeddingProvider
 
 
 def _seed(db_session: Session) -> tuple[JobPosting, JobPosting, JobPosting]:
@@ -129,6 +132,87 @@ def test_top_matches_search_dismissal_and_per_job_breakdown(
     assert breakdown.status_code == 200
     assert breakdown.json()["seniority_score"] == 1.0
     assert api_client.get("/matches/job/999999").status_code == 404
+
+
+def test_top_matches_sorts_newest_first_by_default_and_by_score_on_request(
+    api_client: TestClient, db_session: Session
+) -> None:
+    from datetime import timedelta
+
+    from app.core.timezone import utc_now
+
+    open_job, _, _ = _seed(db_session)
+    company = db_session.get(Company, open_job.company_id)
+    assert company is not None
+    older_better = JobPosting(
+        company_id=company.id,
+        career_source_id=open_job.career_source_id,
+        external_job_id="older-better",
+        title="Junior Backend Engineer",
+        normalized_title="junior backend engineer",
+        location_text="Tel Aviv",
+        country="Israel",
+        source_url="https://job-boards.greenhouse.io/acme/jobs/older-better",
+        source_published_at=utc_now() - timedelta(days=40),
+        content_hash="c" * 64,
+        status=JobStatus.ACTIVE,
+    )
+    db_session.add(older_better)
+    db_session.flush()
+    candidate_id = db_session.execute(
+        select(JobMatch.candidate_profile_id).where(JobMatch.job_id == open_job.id)
+    ).scalar_one()
+    role_id = db_session.execute(
+        select(JobMatch.target_role_id).where(JobMatch.job_id == open_job.id)
+    ).scalar_one()
+    db_session.add(
+        JobMatch(
+            candidate_profile_id=candidate_id,
+            target_role_id=role_id,
+            job_id=older_better.id,
+            candidate_semantic_score=0.9,
+            intent_semantic_score=0.9,
+            skill_score=1.0,
+            role_score=1.0,
+            seniority_score=1.0,
+            location_score=1.0,
+            recency_score=1.0,
+            final_score=99.0,
+            reasons=[],
+            concerns=[],
+        )
+    )
+    db_session.commit()
+
+    # open_job has no publish date, so its discovery time (now) counts:
+    # it's newer than the 40-day-old, higher-scoring one.
+    newest_first = [m["job_id"] for m in api_client.get("/matches/top").json()]
+    assert newest_first.index(open_job.id) < newest_first.index(older_better.id)
+
+    scored = api_client.get("/matches/top", params={"sort": "score"}).json()
+    by_score = [m["job_id"] for m in scored]
+    assert by_score.index(older_better.id) < by_score.index(open_job.id)
+
+
+def test_top_matches_semantic_search_ranks_by_embedding_distance(
+    api_client: TestClient, db_session: Session, fake_embedding_provider: FakeEmbeddingProvider
+) -> None:
+    open_job, _, _ = _seed(db_session)
+    # Give the stored job a direction, and make the fake provider embed a
+    # query containing "backend" onto the same direction.
+    vector = [0.0] * EMBEDDING_DIM
+    vector[0] = 1.0
+    open_job.embedding = vector
+    db_session.commit()
+    fake_embedding_provider._overrides["backend"] = vector  # noqa: SLF001
+
+    hit = api_client.get("/matches/top", params={"q": "backend work", "semantic": "true"}).json()
+    assert [m["job_id"] for m in hit] == [open_job.id]
+
+    # A query the provider embeds as the zero vector has no cosine
+    # relationship with anything: nothing is "about" it.
+    miss = api_client.get("/matches/top", params={"q": "zzz", "semantic": "true"}).json()
+    assert miss == []
 
 
 def test_dashboard_stats_and_root_redirect(api_client: TestClient, db_session: Session) -> None:

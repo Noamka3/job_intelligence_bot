@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import math
 
 from fastembed import TextEmbedding
 from onnxruntime.capi.onnxruntime_pybind11_state import RuntimeException as OnnxRuntimeException
@@ -42,7 +43,20 @@ class LocalEmbeddingProvider:
         self.dimensions = settings.embedding_dimensions
 
     def embed_one(self, text: str) -> list[float]:
-        return self.embed_many([text])[0]
+        """One vector for a text of any length. The model reads at most
+        ~512 tokens and silently truncates (fastembed enables truncation
+        unconditionally), which for a multi-page CV meant only the first
+        page counted and for a long posting the requirements at the end
+        were never seen. Longer texts are embedded in chunks and the
+        chunk vectors are averaged and re-normalized - the standard
+        long-document approach for sentence-transformer models."""
+        chunks = _chunk_words(text, _CHUNK_WORDS)
+        if len(chunks) <= 1:
+            return self.embed_many([text])[0]
+        vectors = self.embed_many(chunks)
+        mean = [sum(column) / len(vectors) for column in zip(*vectors, strict=True)]
+        norm = math.sqrt(sum(value * value for value in mean))
+        return [value / norm for value in mean] if norm else mean
 
     @retry(
         retry=retry_if_exception_type(OnnxRuntimeException),
@@ -55,3 +69,15 @@ class LocalEmbeddingProvider:
         if not texts:
             return []
         return [vector.tolist() for vector in self._model.embed(texts)]
+
+
+# ~220 words is comfortably inside the 512-token window for mixed
+# Hebrew/English text (Hebrew tokenizes to more pieces per word).
+_CHUNK_WORDS = 220
+
+
+def _chunk_words(text: str, size: int) -> list[str]:
+    words = text.split()
+    if len(words) <= size:
+        return [text]
+    return [" ".join(words[start : start + size]) for start in range(0, len(words), size)]

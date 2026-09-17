@@ -30,6 +30,7 @@ class MatchRead(BaseModel):
     company_name: str
     location_text: str | None
     country: str | None
+    region: str | None
     source_type: CareerSourceType
     source_url: str
     apply_url: str | None

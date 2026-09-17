@@ -43,6 +43,13 @@ class CandidateProfile(Base):
     embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM))
 
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Structured extraction (a local LLM, up to minutes) and rescoring
+    # every job happen *after* the upload has responded; this is how the
+    # dashboard knows when they're done: "pending" -> "done" | "failed".
+    processing_status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="done", server_default="done"
+    )
+    processing_note: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -50,6 +57,5 @@ class CandidateProfile(Base):
 
     def __repr__(self) -> str:
         return (
-            f"CandidateProfile(id={self.id!r}, version={self.version!r}, "
-            f"active={self.is_active!r})"
+            f"CandidateProfile(id={self.id!r}, version={self.version!r}, active={self.is_active!r})"
         )

@@ -25,10 +25,18 @@ hot reload and proxies every API prefix to uvicorn on `:8000`.
 
 | Route | What it shows |
 |---|---|
-| `/app/` | Top matches for the active CV: score badge, title, company, location, source, when it was posted/found, the reasons (green) and concerns (amber) the scorer produced, apply link, and one-tap feedback. Filters: search, minimum score, discovered within (today/week/month), target role, Israel-only (default on), hide dismissed (default on). "Load more" pages through. |
-| `/app/jobs/:id` | One job: the seven component scores as bars with a plain-language label each, reasons/concerns, skills, responsibilities/requirements/description, apply + source links, feedback. |
-| `/app/status` | Is the bot alive: last crawl (pulse turns amber after 20 min without one), active jobs (classified Israel / unknown location / total), found in the last 24h, sources and jobs by type, sources failing repeatedly, the last 25 crawl runs. Auto-refreshes every minute. |
-| `/app/profile` | Upload a CV (drag & drop, PDF/DOCX), see the active version and its extracted skills, switch back to an older version; target roles with enable/disable and a form to add one. Any change here rescored every job server-side before the request returns. |
+| `/app/` | Matches for the active CV, **newest posting first** by default (or "התאמה קודם" to sort by score): a percentage ring, a colour-coded company tag (the hue is derived from the company name, so a company always looks the same), title, location, source, when it was posted/found, the reasons (green) and concerns (amber) the scorer produced, apply link, and one-tap feedback. Filters: search, minimum match, discovered within (today/week/month), **region in Israel**, target role, Israel-only (default on), hide dismissed (default on). "Load more" pages through. |
+| `/app/jobs/:id` | One job: the component scores as percentage bars with a plain-language label each, reasons/concerns, skills, responsibilities/requirements/description, apply + source links, feedback. |
+| `/app/applications` | Every job marked "הגשתי", as a pipeline: a status per application (applied → screening → interview → assignment → offer / rejected / withdrawn), free-text notes saved on blur, counts per stage, "in process / finished / all" views. Nothing is ever deleted. |
+| `/app/status` | Is the bot alive: a live **countdown to the next scheduled refresh** (from the scheduler's own heartbeat in Redis, turns amber if a tick is 2+ minutes late), how many sources are waiting in the crawl queue, last crawl, active jobs (classified Israel / unknown location / total), found in the last 24h, sources and jobs by type, sources failing repeatedly, the last 25 crawl runs. Refreshes every 30s. |
+| `/app/profile` | Upload a CV (drag & drop, PDF/DOCX), see the active version, **what the scan does step by step and everything it extracted** (languages, frameworks, databases, education, projects, ...) plus the full raw text read from the file - so a missed skill is visible; switch back to an older version; target roles with enable/disable and a form to add one. Any change here rescores every job server-side before the request returns. |
+
+**Search is hybrid.** Whatever is typed is matched as text against
+title/company *and* embedded with the same local model the jobs were
+embedded with; exact text hits rank first, then jobs whose embedding is
+within cosine distance 0.75 of the query, by closeness. So "backend
+developer" finds backend jobs, and "משהו עם AI וסטארטאפ קטן" finds jobs
+that read like that.
 
 Feedback semantics: "מעניין"/"הגשתי" mark a job; "לא רלוונטי"/"בכיר מדי"
 (and the other dismissing actions) hide it from the default list - the

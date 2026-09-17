@@ -1,18 +1,32 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { fetchStats } from "../api/client";
 import { Pill, Skeletons, StatTile } from "../components/ui";
 import { useAsync } from "../hooks/useAsync";
-import { RUN_STATUS_LABELS, SOURCE_LABELS, formatDateTime, relativeTime } from "../lib/format";
+import {
+  RUN_STATUS_LABELS,
+  SOURCE_LABELS,
+  countdown,
+  formatDateTime,
+  relativeTime,
+} from "../lib/format";
 
-const REFRESH_MS = 60_000;
+const REFRESH_MS = 30_000;
 
 export function StatusPage() {
   const stats = useAsync(fetchStats, []);
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     const handle = window.setInterval(stats.reload, REFRESH_MS);
     return () => window.clearInterval(handle);
   }, [stats.reload]);
+
+  // The countdown ticks every second; the data behind it refreshes every
+  // 30s, so the moment the scheduler fires the clock resets by itself.
+  useEffect(() => {
+    const handle = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(handle);
+  }, []);
 
   if (stats.loading && !stats.data) {
     return (
@@ -31,8 +45,11 @@ export function StatusPage() {
     );
   }
   const s = stats.data;
-  const lastCrawlAge = s.last_crawl_at ? (Date.now() - new Date(s.last_crawl_at).getTime()) / 60000 : Infinity;
-  const stale = lastCrawlAge > 20;
+  const nextAt = s.next_dispatch_at ? new Date(s.next_dispatch_at).getTime() : null;
+  // Two minutes past the expected tick with no new tick = the scheduler
+  // isn't running (Beat/worker down), not just a slow crawl.
+  const late = nextAt !== null && now - nextAt > 2 * 60_000;
+  const alive = s.last_dispatch_at !== null && !late;
 
   return (
     <main id="main" className="page">
@@ -40,14 +57,42 @@ export function StatusPage() {
         <div>
           <h1 className="page__title">מצב המערכת</h1>
           <p className="page__subtitle">
-            <span className={`pulse${stale ? " pulse--stale" : ""}`} aria-hidden="true" />{" "}
-            {s.last_crawl_at
-              ? `סריקה אחרונה ${relativeTime(s.last_crawl_at)}`
-              : "עוד לא בוצעה סריקה"}
-            {stale && " - נראה שהמתזמן לא רץ (בדוק שה-worker ו-beat פעילים)"}
+            <span className={`pulse${alive ? "" : " pulse--stale"}`} aria-hidden="true" />{" "}
+            {s.last_dispatch_at
+              ? `המתזמן רץ ${relativeTime(s.last_dispatch_at)}`
+              : "המתזמן עוד לא רץ"}
+            {s.last_crawl_at && ` · סריקה אחרונה ${relativeTime(s.last_crawl_at)}`}
+            {late && " - מאחר: בדוק שה-worker ו-beat פעילים"}
           </p>
         </div>
       </header>
+
+      <section className="card heartbeat" style={{ marginBottom: 18 }}>
+        <div>
+          <div className={`countdown${late ? " countdown--late" : ""}`} aria-live="off">
+            {nextAt === null ? "--:--" : late ? "מאחר" : countdown(s.next_dispatch_at, now)}
+          </div>
+          <div className="faint" style={{ marginTop: 4 }}>
+            עד הרענון הבא של המשרות
+          </div>
+        </div>
+        <div className="muted" style={{ maxWidth: 520 }}>
+          הבוט בודק כל <strong>{s.poll_interval_minutes} דקות</strong> אילו מקורות הגיע זמנם,
+          ומכניס אותם לתור הסריקה. משרה חדשה מופיעה ב"התאמות" מיד אחרי שהסריקה שלה מסתיימת.
+          {s.crawl_queue_depth !== null && (
+            <>
+              {" "}
+              כרגע ממתינים בתור: <strong>{s.crawl_queue_depth}</strong> מקורות.
+            </>
+          )}
+          {s.last_dispatch_at && (
+            <>
+              {" "}
+              ריצה אחרונה: {formatDateTime(s.last_dispatch_at)}.
+            </>
+          )}
+        </div>
+      </section>
 
       <div className="tiles">
         <StatTile value={s.active_israel_jobs} label="משרות פעילות בישראל" tone="good" />

@@ -38,7 +38,7 @@ def test_positive_keyword_partial_credit() -> None:
 
 
 def test_negative_keyword_beats_an_alias_contained_in_the_title() -> None:
-    """"Senior Software Engineer" contains the alias "Software Engineer";
+    """ "Senior Software Engineer" contains the alias "Software Engineer";
     the alias used to short-circuit to 1.0 before negatives were checked."""
     role = _role(aliases=["Software Engineer"], negative_keywords=["senior", "staff"])
     score, explanation = score_role("Senior Software Engineer", None, role)

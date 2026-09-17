@@ -6,8 +6,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from typing import Any, Literal
 
-from sqlalchemy import Select, func, or_, select
+from sqlalchemy import Select, case, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.timezone import utc_now
@@ -29,6 +30,14 @@ class MatchRow:
     last_feedback: JobFeedbackAction | None
 
 
+MatchSort = Literal["recent", "score"]
+
+# Cosine *distance* (1 - similarity) above which a job is simply not about
+# the query, for the local multilingual MiniLM model: related postings sit
+# around 0.3-0.6, unrelated ones 0.8+.
+SEMANTIC_MAX_DISTANCE = 0.75
+
+
 @dataclass(frozen=True)
 class MatchFilters:
     min_score: float = 0.0
@@ -36,7 +45,14 @@ class MatchFilters:
     israel_only: bool = True
     discovered_within_days: int | None = None
     query: str | None = None
+    # When set alongside `query`, the search is hybrid: text hits on
+    # title/company first, then jobs whose embedding is close to this one
+    # (ranked by cosine distance). Takes precedence over `sort`.
+    query_embedding: list[float] | None = None
+    # A JobPosting.region key (see app/services/jobs/location.py REGIONS).
+    region: str | None = None
     hide_dismissed: bool = True
+    sort: MatchSort = "recent"
     limit: int = 50
     offset: int = 0
 
@@ -66,6 +82,27 @@ def list_top_matches(
 ) -> list[MatchRow]:
     latest_feedback = _latest_feedback_subquery().subquery()
 
+    # "Newest first" means the posting date when the source reports one,
+    # else when the bot found it - a bootstrap crawl finds hundreds of
+    # jobs in one hour, and their real ages differ by months.
+    posted_at = func.coalesce(JobPosting.source_published_at, JobPosting.first_seen_at)
+    text_hit = None
+    if filters.query:
+        needle = f"%{filters.query.strip().lower()}%"
+        text_hit = or_(
+            JobPosting.normalized_title.ilike(needle), Company.normalized_name.ilike(needle)
+        )
+    ordering: tuple[Any, ...]
+    if filters.query_embedding is not None and text_hit is not None:
+        # Hybrid: an exact title/company hit outranks a merely similar
+        # job, then closeness of meaning, then the match score.
+        distance = JobPosting.embedding.cosine_distance(filters.query_embedding)
+        ordering = (case((text_hit, 0), else_=1), distance, JobMatch.final_score.desc())
+    elif filters.sort == "score":
+        ordering = (JobMatch.final_score.desc(), posted_at.desc())
+    else:
+        ordering = (posted_at.desc(), JobMatch.final_score.desc())
+
     query = (
         select(JobMatch, JobPosting, Company, CareerSource, latest_feedback.c.action)
         .join(JobPosting, JobMatch.job_id == JobPosting.id)
@@ -79,7 +116,7 @@ def list_top_matches(
             # match for a job that's gone is not something to apply to.
             JobPosting.status == JobStatus.ACTIVE,
         )
-        .order_by(JobMatch.final_score.desc(), JobPosting.first_seen_at.desc())
+        .order_by(*ordering)
         .limit(filters.limit)
         .offset(filters.offset)
     )
@@ -90,11 +127,15 @@ def list_top_matches(
     if filters.discovered_within_days is not None:
         since: datetime = utc_now() - timedelta(days=filters.discovered_within_days)
         query = query.where(JobPosting.first_seen_at >= since)
-    if filters.query:
-        needle = f"%{filters.query.strip().lower()}%"
-        query = query.where(
-            or_(JobPosting.normalized_title.ilike(needle), Company.normalized_name.ilike(needle))
+    if filters.region is not None:
+        query = query.where(JobPosting.region == filters.region)
+    if filters.query_embedding is not None and text_hit is not None:
+        near = JobPosting.embedding.is_not(None) & (
+            JobPosting.embedding.cosine_distance(filters.query_embedding) <= SEMANTIC_MAX_DISTANCE
         )
+        query = query.where(or_(text_hit, near))
+    elif text_hit is not None:
+        query = query.where(text_hit)
     if filters.hide_dismissed:
         query = query.where(
             or_(
@@ -109,9 +150,7 @@ def list_top_matches(
     ]
 
 
-def get_match_for_job(
-    db: Session, candidate_profile_id: int, job_id: int
-) -> MatchRow | None:
+def get_match_for_job(db: Session, candidate_profile_id: int, job_id: int) -> MatchRow | None:
     latest_feedback = _latest_feedback_subquery().subquery()
     row = db.execute(
         select(JobMatch, JobPosting, Company, CareerSource, latest_feedback.c.action)

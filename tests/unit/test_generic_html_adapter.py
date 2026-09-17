@@ -161,14 +161,15 @@ def test_fetch_job_keeps_a_real_posting_that_has_a_more_jobs_sidebar() -> None:
     sidebar = "".join(
         f'<li class="s"><a href="/positions/position-{i}">Engineer {i}</a></li>' for i in range(8)
     )
+    body = " ".join(["Own the rollout across every customer team."] * 12)
     respx.get("https://www.acme.co.il/positions/position-1").mock(
         return_value=httpx.Response(
             200,
             text=(
-                f"<html><body><aside><ul>{sidebar}</ul></aside>"
-                "<main><h1>Adoption Specialist</h1><p>Remote US</p><p>Full-time</p>"
-                '<p>Own the rollout.</p><a class="btn" href="#apply-form">Apply for this job</a>'
-                "</main></body></html>"
+                f"<html><body><main><aside><h4>All Positions</h4><ul>{sidebar}</ul></aside>"
+                "<article><h1>Adoption Specialist</h1><p>Remote US</p><p>Full-time</p>"
+                f'<p>{body}</p><a class="btn" href="#apply-form">Apply for this job</a>'
+                "</article></main></body></html>"
             ),
         )
     )
@@ -184,7 +185,11 @@ def test_fetch_job_keeps_a_real_posting_that_has_a_more_jobs_sidebar() -> None:
 
     assert details.title == "Adoption Specialist"
     assert details.location_text == "Remote US"  # short recognized line near the top
-    assert details.description is not None and "Own the rollout." in details.description
+    assert details.description is not None
+    assert "Own the rollout" in details.description
+    # The "All Positions" sidebar is not part of *this* job's description.
+    assert "Engineer 3" not in details.description
+    assert "All Positions" not in details.description
 
 
 @respx.mock
@@ -194,7 +199,9 @@ def test_fetch_job_treats_a_404_as_the_job_being_gone() -> None:
         GenericHtmlAdapter().fetch_job(
             _SOURCE,
             JobStub(
-                external_job_id="old", title="Old", source_url="https://www.acme.co.il/careers/old-role"
+                external_job_id="old",
+                title="Old",
+                source_url="https://www.acme.co.il/careers/old-role",
             ),
         )
 
@@ -226,3 +233,56 @@ def test_fetch_job_falls_back_to_h1_and_main_content() -> None:
     assert details.title == "QA Engineer"
     assert details.description == "QA Engineer\nTest everything.\n2+ years"
     assert details.location_text is None
+
+
+@respx.mock
+def test_fetch_job_ignores_a_section_name_h1_and_uses_the_listing_title() -> None:
+    """logica-it.com puts <h1>משרות</h1> on every job page (259 stored jobs
+    were titled "משרות"); hibob.com does the same with "Careers"."""
+    respx.get("https://www.acme.co.il/jobs/21072/").mock(
+        return_value=httpx.Response(
+            200,
+            text="""
+            <html><head><title>משרות | Acme</title></head><body>
+            <h1>משרות</h1><h2>חיפוש משרה</h2>
+            <main><p>Verification Engineer</p><p>מספר משרה: 21072</p>
+            <p>לחברת מדיקל מובילה דרוש/ה מהנדס/ת וריפיקציה עם ניסיון בסביבת לינוקס, סקריפטים
+            בפייתון ועבודה מול צוותי פיתוח. המשרה מיועדת לנשים וגברים כאחד.</p></main>
+            </body></html>
+            """,
+        )
+    )
+
+    details = GenericHtmlAdapter().fetch_job(
+        _SOURCE,
+        JobStub(
+            external_job_id="x",
+            title="Verification Engineer",
+            source_url="https://www.acme.co.il/jobs/21072/",
+        ),
+    )
+
+    assert details.title == "Verification Engineer"
+
+
+@respx.mock
+def test_fetch_job_falls_back_to_the_first_real_line_when_every_heading_is_generic() -> None:
+    respx.get("https://www.acme.co.il/jobs/21071/").mock(
+        return_value=httpx.Response(
+            200,
+            text="""
+            <html><body><h1>Careers</h1>
+            <main><p>Jobs</p><p>איש/אשת טלפוניה, IVR ותקשורת</p><p>מספר משרה: 21071</p>
+            <p>דרוש/ה איש/אשת טלפוניה לתפקיד מאתגר בסביבת תקשורת ארגונית, כולל עבודה עם מרכזיות
+            IP, מערכות IVR, ניטור ותמיכה בלקוחות פנימיים. עבודה מלאה במרכז הארץ.</p></main>
+            </body></html>
+            """,
+        )
+    )
+
+    details = GenericHtmlAdapter().fetch_job(
+        _SOURCE,
+        JobStub(external_job_id="y", title="Jobs", source_url="https://www.acme.co.il/jobs/21071/"),
+    )
+
+    assert details.title == "איש/אשת טלפוניה, IVR ותקשורת"

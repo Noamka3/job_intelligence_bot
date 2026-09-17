@@ -9,11 +9,13 @@ from __future__ import annotations
 import logging
 from datetime import timedelta
 
+from app.core.config import get_settings
 from app.core.timezone import utc_now
 from app.db.session import get_session_factory
 from app.models.career_source import CareerSource
 from app.services.embeddings import get_embedding_provider
 from app.services.jobs.ingestion import crawl_source, get_due_sources
+from app.services.scheduler_state import crawl_queue_depth, record_dispatch_tick
 from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
@@ -27,9 +29,19 @@ def dispatch_due_sources() -> int:
     each gets Celery's own retry semantics on top of the per-source
     backoff crawl_source already tracks via CareerSource.next_check_at.
     """
+    record_dispatch_tick()
+    # Top the queue up to the target, never past it: what stays due is
+    # simply picked up next tick, longest-overdue first. An unreachable
+    # Redis reads as an empty queue - the .delay() below would fail
+    # loudly anyway.
+    backlog = crawl_queue_depth() or 0
+    budget = max(0, get_settings().crawl_queue_target - backlog)
+    if budget == 0:
+        logger.info("crawl queue full, dispatching nothing", extra={"backlog": backlog})
+        return 0
     session_factory = get_session_factory()
     with session_factory() as db:
-        sources = get_due_sources(db)
+        sources = get_due_sources(db, limit=budget)
         # Lease every source for one poll interval *before* enqueueing.
         # With a long queue (bootstrap, a fresh sheet sync) the next Beat
         # tick fires before the worker reaches the tail, and would
@@ -47,7 +59,9 @@ def dispatch_due_sources() -> int:
 
         for source in sources:
             crawl_one_source.delay(source.id)
-        logger.info("dispatched due sources", extra={"source_count": len(sources)})
+        logger.info(
+            "dispatched due sources", extra={"source_count": len(sources), "backlog": backlog}
+        )
         return len(sources)
 
 

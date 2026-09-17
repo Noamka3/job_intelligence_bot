@@ -75,9 +75,7 @@ class WorkdayAdapter:
 
         site_root = _site_root(source)
         return [
-            self._to_stub(posting, site_root)
-            for posting in postings
-            if posting.get("externalPath")
+            self._to_stub(posting, site_root) for posting in postings if posting.get("externalPath")
         ]
 
     def fetch_job(self, source: CareerSource, stub: JobStub) -> JobDetails:

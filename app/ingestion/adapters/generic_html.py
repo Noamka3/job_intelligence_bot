@@ -47,6 +47,7 @@ _MAX_JOBS_PER_LISTING = 300
 _MAX_DESCRIPTION_CHARS = 20_000
 _LISTING_LINK_THRESHOLD = 5
 _LOCATION_SCAN_LINES = 30
+_MIN_BODY_CHARS = 400
 _APPLY_RE = re.compile(r"apply|submit|הגש|הגישו|מועמדות|שלח(?:ו|/י)? קורות", re.I)
 
 _JOBISH_PATH_RE = re.compile(
@@ -157,8 +158,10 @@ def extract_job_links(html: str, page_url: str) -> list[tuple[str, str]]:
 
     chosen: dict[str, str] = {url: title for url, title in best}
     for url, title, _ in candidates:
-        if url not in chosen and _ROLE_WORD_RE.search(title) and _JOBISH_PATH_RE.search(
-            urlparse(url).path
+        if (
+            url not in chosen
+            and _ROLE_WORD_RE.search(title)
+            and _JOBISH_PATH_RE.search(urlparse(url).path)
         ):
             chosen[url] = title
     return list(chosen.items())
@@ -281,14 +284,52 @@ def _guess_location(text: str) -> str | None:
     return None
 
 
+def _strip_job_link_lists(soup: BeautifulSoup, page_url: str) -> None:
+    """Remove "more positions" widgets: any block that is mostly links to
+    other job pages. Seen on real job pages (Island, Buildots): a sidebar
+    listing every open position, which otherwise ends up inside this
+    job's description - and its embedding."""
+    containers = soup.find_all(["ul", "ol", "aside", "nav", "section", "div"])
+    # Innermost first, so a list is removed before its ancestor is judged.
+    containers.sort(key=lambda node: len(list(node.parents)), reverse=True)
+    for container in containers:
+        if container.parent is None:  # already removed with an ancestor
+            continue
+        job_links = [
+            anchor
+            for anchor in container.find_all("a", href=True)
+            if _JOBISH_PATH_RE.search(urlparse(urljoin(page_url, str(anchor["href"]))).path)
+        ]
+        if len(job_links) < 3:
+            continue
+        text_length = len(container.get_text(" ", strip=True))
+        link_text_length = sum(len(a.get_text(" ", strip=True)) for a in job_links)
+        if text_length and link_text_length >= 0.5 * text_length:
+            container.decompose()
+
+
+def _body_container(soup: BeautifulSoup) -> Tag | BeautifulSoup:
+    """The block the posting itself lives in: the nearest ancestor of the
+    page's <h1> with a real amount of text, rather than all of <main>."""
+    heading = soup.find("h1")
+    node: Tag | None = heading.parent if isinstance(heading, Tag) else None
+    while isinstance(node, Tag) and node.name not in ("body", "html"):
+        if len(node.get_text(" ", strip=True)) >= _MIN_BODY_CHARS:
+            return node
+        node = node.parent if isinstance(node.parent, Tag) else None
+    return soup.select_one("main, article, [role=main]") or soup.body or soup
+
+
 def _details_from_page(html: str, stub: JobStub) -> JobDetails:
     soup = BeautifulSoup(html, "lxml")
-    title = _page_title(soup) or stub.title
+    title = _page_title(soup, stub.title)
 
     for tag in soup(_STRIP_TAGS):
         tag.decompose()
-    container = soup.select_one("main, article, [role=main]") or soup.body or soup
-    text = html_to_text(str(container))
+    _strip_job_link_lists(soup, stub.source_url)
+    text = html_to_text(str(_body_container(soup)))
+    if _is_generic_title(title):
+        title = _first_title_like_line(text) or title
     return JobDetails(
         external_job_id=stub.external_job_id,
         title=title,
@@ -300,17 +341,67 @@ def _details_from_page(html: str, stub: JobStub) -> JobDetails:
     )
 
 
-def _page_title(soup: BeautifulSoup) -> str | None:
+# Section names sites put in the <h1> of every job page ("משרות" on
+# logica-it.com, "Careers" on hibob.com - 330 stored jobs carried one of
+# these as their title). Never a job title on its own.
+_GENERIC_TITLES = frozenset(
+    {
+        "משרות",
+        "משרה",
+        "דרושים",
+        "קריירה",
+        "חיפוש משרה",
+        "jobs",
+        "job",
+        "careers",
+        "career",
+        "open positions",
+        "positions",
+        "vacancies",
+        "opportunities",
+        "join us",
+        "join our team",
+        "work with us",
+        "job details",
+        "job description",
+    }
+)
+_MAX_TITLE_CHARS = 120
+
+
+def _is_generic_title(text: str | None) -> bool:
+    return not text or text.strip().casefold() in _GENERIC_TITLES
+
+
+def _page_title(soup: BeautifulSoup, stub_title: str) -> str:
+    """First non-generic candidate: the page's <h1>, the link text the
+    listing page used for this job, a sub-heading, og:title, <title>."""
+    candidates: list[str | None] = []
     h1 = soup.find("h1")
     if h1 is not None:
-        text = " ".join(h1.get_text(" ", strip=True).split())
-        if text:
-            return text
+        candidates.append(" ".join(h1.get_text(" ", strip=True).split()))
+    candidates.append(stub_title)
+    for heading in soup.find_all(("h2", "h3"), limit=4):
+        candidates.append(" ".join(heading.get_text(" ", strip=True).split()))
     og = soup.find("meta", attrs={"property": "og:title"})
     if isinstance(og, Tag):
         content = og.get("content")
-        if isinstance(content, str) and content.strip():
-            return content.strip()
+        if isinstance(content, str):
+            candidates.append(content.strip())
     if soup.title is not None and soup.title.string:
-        return soup.title.string.strip().split("|")[0].split(" - ")[0].strip() or None
+        candidates.append(soup.title.string.strip().split("|")[0].split(" - ")[0].strip())
+    for candidate in candidates:
+        if not _is_generic_title(candidate) and len(str(candidate)) <= _MAX_TITLE_CHARS:
+            return str(candidate)
+    return stub_title
+
+
+def _first_title_like_line(text: str) -> str | None:
+    """Last resort when every heading is a section name: the first short
+    line of the posting body that isn't one ("Verification Engineer"
+    right after "משרות / חיפוש משרה" on logica-it.com)."""
+    for line in text.splitlines()[:8]:
+        line = line.strip()
+        if line and not _is_generic_title(line) and len(line) <= _MAX_TITLE_CHARS:
+            return line
     return None

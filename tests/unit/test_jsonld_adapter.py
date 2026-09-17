@@ -69,7 +69,7 @@ def test_fetch_job_uses_cached_raw_and_maps_employment_type() -> None:
 
 
 def test_date_only_date_posted_is_timezone_aware() -> None:
-    """"datePosted": "2024-01-10" (Google's documented form) used to come
+    """ "datePosted": "2024-01-10" (Google's documented form) used to come
     back naive; comparing it with the aware value stored in Postgres, or
     subtracting it from utc_now() in recency scoring, raised TypeError
     and aborted the whole crawl of a JSON-LD source every tick.

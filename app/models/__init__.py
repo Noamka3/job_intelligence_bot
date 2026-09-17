@@ -5,6 +5,7 @@ Alembic's env.py (and anything else that needs the complete schema, e.g.
 individual model modules.
 """
 
+from app.models.application import Application
 from app.models.candidate_profile import CandidateProfile
 from app.models.career_source import CareerSource
 from app.models.company import Company
@@ -16,6 +17,7 @@ from app.models.notification_log import NotificationLog
 from app.models.target_role import TargetRole
 
 __all__ = [
+    "Application",
     "CandidateProfile",
     "CareerSource",
     "Company",

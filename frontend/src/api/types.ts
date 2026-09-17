@@ -25,6 +25,15 @@ export type FeedbackAction =
   | "saved"
   | "rejected";
 
+export type ApplicationStatus =
+  | "applied"
+  | "screening"
+  | "interview"
+  | "assignment"
+  | "offer"
+  | "rejected"
+  | "withdrawn";
+
 export type CrawlRunStatus = "running" | "success" | "partial" | "failed";
 
 export interface Match {
@@ -47,6 +56,7 @@ export interface Match {
   company_name: string;
   location_text: string | null;
   country: string | null;
+  region: string | null;
   source_type: SourceType;
   source_url: string;
   apply_url: string | null;
@@ -109,8 +119,31 @@ export interface CandidateProfile {
   file_hash: string;
   is_active: boolean;
   structured_profile: Record<string, unknown>;
+  processing_status: "pending" | "done" | "failed";
+  processing_note: string | null;
   created_at: string;
   activated_at: string | null;
+}
+
+export interface CandidateProfileText {
+  id: number;
+  raw_text: string;
+  normalized_text: string;
+}
+
+export interface Application {
+  id: number;
+  job_id: number;
+  status: ApplicationStatus;
+  applied_at: string;
+  updated_at: string;
+  notes: string | null;
+  job_title: string;
+  company_name: string;
+  location_text: string | null;
+  apply_url: string | null;
+  source_url: string;
+  job_status: string;
 }
 
 export interface SourceTypeStat {
@@ -151,6 +184,10 @@ export interface DashboardStats {
   matches: number;
   jobs_discovered_24h: number;
   last_crawl_at: string | null;
+  last_dispatch_at: string | null;
+  next_dispatch_at: string | null;
+  poll_interval_minutes: number;
+  crawl_queue_depth: number | null;
   runs_last_hour: number;
   failed_runs_last_hour: number;
   by_source_type: SourceTypeStat[];
@@ -158,11 +195,15 @@ export interface DashboardStats {
   failing_sources: FailingSource[];
 }
 
+export type MatchSort = "recent" | "score";
+
 export interface MatchFilters {
   minScore: number;
   days: number | null;
   targetRoleId: number | null;
+  region: string | null;
   israelOnly: boolean;
   hideDismissed: boolean;
   query: string;
+  sort: MatchSort;
 }

@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.timezone import utc_now
 from app.models.career_source import CareerSource
 from app.models.company import Company
@@ -18,6 +19,7 @@ from app.models.enums import CareerSourceType, CrawlRunStatus, JobStatus
 from app.models.job_match import JobMatch
 from app.models.job_posting import JobPosting
 from app.services.jobs.israel_filter import israel_only_clause
+from app.services.scheduler_state import crawl_queue_depth, last_dispatch_at, next_dispatch_at
 
 
 @dataclass(frozen=True)
@@ -66,6 +68,12 @@ class DashboardStats:
     matches: int
     jobs_discovered_24h: int
     last_crawl_at: datetime | None
+    # The scheduler's own heartbeat (Redis), separate from crawl rows: a
+    # tick with nothing due still proves Beat is alive.
+    last_dispatch_at: datetime | None
+    next_dispatch_at: datetime | None
+    poll_interval_minutes: int
+    crawl_queue_depth: int | None  # crawls waiting for a worker; None if Redis is unreachable
     runs_last_hour: int
     failed_runs_last_hour: int
     by_source_type: list[SourceTypeStat]
@@ -157,6 +165,10 @@ def load_dashboard_stats(db: Session) -> DashboardStats:
         matches=matches,
         jobs_discovered_24h=discovered_24h,
         last_crawl_at=last_crawl_at,
+        last_dispatch_at=last_dispatch_at(),
+        next_dispatch_at=next_dispatch_at(),
+        poll_interval_minutes=get_settings().default_poll_minutes,
+        crawl_queue_depth=crawl_queue_depth(),
         runs_last_hour=runs_last_hour,
         failed_runs_last_hour=failed_last_hour,
         by_source_type=[

@@ -12,12 +12,13 @@ import logging
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.models.candidate_profile import CandidateProfile
 from app.models.enums import JobStatus
 from app.models.job_posting import JobPosting
 from app.models.target_role import TargetRole
 from app.services.candidate.profile_service import get_active_profile
 from app.services.matching.persistence import save_match
-from app.services.matching.scoring import compute_match
+from app.services.matching.scoring import candidate_skill_set, compute_match
 
 logger = logging.getLogger(__name__)
 
@@ -30,23 +31,36 @@ def score_job(db: Session, job: JobPosting) -> int:
     candidate = get_active_profile(db)
     if candidate is None:
         return 0
+    return _score_job_for(db, candidate, candidate_skill_set(candidate), job)
 
+
+def _score_job_for(
+    db: Session, candidate: CandidateProfile, candidate_skills: set[str], job: JobPosting
+) -> int:
     target_roles = db.execute(select(TargetRole).where(TargetRole.enabled.is_(True))).scalars()
     count = 0
     for target_role in target_roles:
-        result = compute_match(candidate, target_role, job)
+        result = compute_match(candidate, target_role, job, candidate_skills=candidate_skills)
         save_match(db, candidate.id, target_role.id, job.id, result)
         count += 1
     return count
 
 
 def score_all_active_jobs(db: Session) -> int:
+    candidate = get_active_profile(db)
+    if candidate is None:
+        return 0
+    # Extracted once here rather than once per job - it's the same CV
+    # text every time, and the regex pass over it isn't free.
+    candidate_skills = candidate_skill_set(candidate)
     jobs = (
         db.execute(select(JobPosting).where(JobPosting.status == JobStatus.ACTIVE)).scalars().all()
     )
     total_matches = 0
-    for job in jobs:
-        total_matches += score_job(db, job)
+    for index, job in enumerate(jobs, start=1):
+        total_matches += _score_job_for(db, candidate, candidate_skills, job)
+        if index % 500 == 0:
+            db.commit()  # keep transactions short - see crawl_source for why
     db.commit()
     logger.info(
         "scored active jobs", extra={"job_count": len(jobs), "matches_written": total_matches}

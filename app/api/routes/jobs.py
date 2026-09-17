@@ -10,10 +10,10 @@ from sqlalchemy.orm import Session
 from app.core.timezone import interpret_naive_as_default_timezone
 from app.db.session import get_db
 from app.models.enums import JobStatus
-from app.models.job_feedback import JobFeedback
 from app.models.job_posting import JobPosting
 from app.schemas.feedback import JobFeedbackCreate, JobFeedbackRead
 from app.schemas.job import JobDetailRead, JobRead
+from app.services.applications import record_feedback
 from app.services.jobs.israel_filter import israel_only_clause
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -80,8 +80,4 @@ def submit_feedback(
     if job is None:
         raise HTTPException(http_status.HTTP_404_NOT_FOUND, "Job not found")
 
-    feedback = JobFeedback(job_id=job_id, action=data.action)
-    db.add(feedback)
-    db.commit()
-    db.refresh(feedback)
-    return JobFeedbackRead.model_validate(feedback)
+    return JobFeedbackRead.model_validate(record_feedback(db, job_id, data.action))

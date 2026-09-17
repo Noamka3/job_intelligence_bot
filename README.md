@@ -9,9 +9,14 @@ full design and `docs/job_sources.md` for verified ATS API formats.
 **Status: Phase 9 (the dashboard) is built on top of Phases 1-6 and 8**
 (Phase 7, WhatsApp, is deliberately deferred to the end). Open
 `http://127.0.0.1:8000/app/` after `npm run build` in `frontend/` - a
-React app served by the same FastAPI process: top matches with one-tap
-feedback, a per-job score breakdown, a live status page, and CV/target
-role management. See `docs/dashboard.md`. All 240 real companies from the sheet
+React app served by the same FastAPI process: matches (newest first,
+hybrid text + semantic search, region filter, one-tap feedback), a
+per-job score breakdown, an applications pipeline for jobs you applied
+to, a live status page with a countdown to the next refresh, and
+CV/target role management that shows exactly what the scan read and
+extracted. See `docs/dashboard.md`. The matching engine was re-derived
+from the real data at the same time (role gate + calibrated similarity -
+see `docs/matching.md`, "Matching v2"). All 240 real companies from the sheet
 are imported; adapters for Greenhouse, Lever, Ashby, Comeet, Workday,
 Workable, SmartRecruiters, Taleo, JSON-LD pages and plain HTML career
 pages discover jobs incrementally (new jobs get fetched/embedded,
@@ -96,14 +101,19 @@ OpenAI is only used if you explicitly switch either provider to `openai`.
 **Honest caveat, found during live testing on this dev machine:**
 CPU-only Ollama inference was extremely slow and once destabilized the
 whole machine badly enough to crash Docker Desktop (see the
-"Local LLM performance" troubleshooting entry below) - a 120s timeout
-(`OLLAMA_TIMEOUT_SECONDS`) now bounds the damage, and a resume upload
-always succeeds regardless (raw text + embedding are saved even if
-structured extraction fails or times out - see
-`app/services/candidate/profile_service.py`), but extraction quality on
-the default small model (`llama3.2:3b`) was noticeably weak on a real
-13-page CV. If this matters to you, `LLM_PROVIDER=openai` is more
-reliable for this one feature.
+"Local LLM performance" troubleshooting entry below) - a 300s timeout
+(`OLLAMA_TIMEOUT_SECONDS`) bounds the damage, and a resume upload
+always succeeds regardless: the request parses, embeds and activates the
+CV and answers at once; extraction and rescoring run in the background
+(`processing_status` on the profile, the dashboard polls it). What the
+small default model (`llama3.2:3b`) is and isn't good at, measured on a
+real CV: it copies lists (languages, frameworks, databases, projects,
+education) accurately once asked field by field, but it judged a fresh
+graduate with no employer as "mid, 4 years" - so the experience level is
+decided by a rule in `app/services/candidate/structured_profile.py` (no
+work-experience section = junior, 0 years; otherwise the model estimates
+the years), not by the model. Matching never depends on the structured
+profile alone.
 
 Israel-only job filtering (`GET /jobs` defaults to `israel_only=true`) is
 in per user request - see `app/services/jobs/location.py`.
@@ -210,6 +220,16 @@ docker compose up -d --build worker beat
 docker logs -f job_bot_worker   # watch crawls happen live
 docker logs -f job_bot_beat     # watch the 5-minute dispatch tick
 ```
+
+The `beat` container is a one-thread worker with Beat embedded that
+consumes only the `scheduler` queue, so the dispatcher runs the moment it
+fires instead of waiting behind the crawls queued before it (after a
+pause, hundreds). Each tick tops the crawl queue up to
+`CRAWL_QUEUE_TARGET` (40) waiting crawls and leaves the rest due, longest
+overdue first: ~200 sources on 5-15 minute intervals ask for more crawls
+than two worker processes deliver, and an unbounded queue only ever grew.
+In practice a source is re-crawled every 30-60 minutes; the status page
+shows the queue depth and the countdown to the next tick.
 
 If you're on a machine with a TLS-inspecting antivirus (see the pip/SSL
 troubleshooting entries below), building `worker`/`beat` needs the same
@@ -440,6 +460,8 @@ the intended lever for this, not something the scorer should special-case.
 .venv/Scripts/python.exe -m app.cli sync-sheet
 .venv/Scripts/python.exe -m app.cli import-excel "C:\path\to\companies.xlsx"
 .venv/Scripts/python.exe -m app.cli reresolve-sources
+.venv/Scripts/python.exe -m app.cli reclassify-locations
+.venv/Scripts/python.exe -m app.cli reembed
 .venv/Scripts/python.exe -m app.cli crawl-now
 .venv/Scripts/python.exe -m app.cli crawl-company "Torq"
 .venv/Scripts/python.exe -m app.cli score-all
@@ -455,7 +477,11 @@ before setting those up or for a one-off import. `reresolve-sources`
 re-runs career-source resolution for every company already imported,
 from the URL it was imported with (no sheet read) - run it after a
 resolver change so companies get their newly recognized board/adapter
-in place, never as a duplicate source. `crawl-now` crawls every
+in place, never as a duplicate source. `reclassify-locations` recomputes
+country + region for every stored job after the location vocabulary
+changes; `reembed` recomputes every stored embedding (CV, roles, jobs)
+and rescores - after changing the embedding model, chunking, or
+`build_embedding_text`. `crawl-now` crawls every
 due `CareerSource`; `crawl-company` crawls just one company's sources, by
 name - useful for testing a single adapter without waiting on a full
 sync. `score-all` scores every `ACTIVE` job against the active CV and

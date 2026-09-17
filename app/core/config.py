@@ -87,13 +87,21 @@ class Settings(BaseSettings):
     llm_provider: Literal["ollama", "openai"] = "ollama"
     ollama_base_url: str = "http://localhost:11434"
     ollama_chat_model: str = "llama3.2:3b"
-    ollama_timeout_seconds: int = 120
+    # 300: the field-by-field extraction prompt takes ~110s on this dev
+    # machine's CPU, and a second call estimates years of experience.
+    ollama_timeout_seconds: int = 300
     openai_chat_model: str = "gpt-5.4-mini"
 
     # --- Display / scheduling defaults ---
     default_timezone: str = "Asia/Jerusalem"
     default_poll_minutes: int = 5
     job_missing_threshold: int = 3
+    # The dispatcher tops the crawl queue up to this many waiting crawls
+    # per tick and leaves the rest due for the next one. Demand (~200
+    # sources on 5-15 minute intervals) exceeds what two worker processes
+    # crawl, so without a cap the queue only ever grew, and sources whose
+    # lease expired while still waiting were queued a second time.
+    crawl_queue_target: int = 40
 
     # --- Ingestion ---
     # Country to ask a source for server-side, where its API supports a
@@ -108,30 +116,36 @@ class Settings(BaseSettings):
     # --- Matching / notifications ---
     notification_score_threshold: int = Field(default=80, ge=0, le=100)
 
-    # Component weights for the final 0-100 match score. Must sum to 1.0 -
-    # enforced in app/services/matching/scoring.py, not here, so a bad
-    # .env value fails loudly at scoring time with a clear message rather
-    # than at Settings construction.
+    # Match score = 100 x role gate x quality (docs/matching.md). The role
+    # gate scales everything by how much the job *is* the role being
+    # looked for (0.2 + 0.8 x role fit): a junior-friendly, well-located
+    # "Payment Operations Analyst" is not a software engineering job and
+    # must not collect the seniority/location/skills points as if it were.
+    # The quality weights below must sum to 1.0 - enforced in
+    # app/services/matching/scoring.py, not here, so a bad .env value
+    # fails loudly at scoring time with a clear message.
     #
-    # Deliberately NOT spec §8's suggested starting point
-    # (30/20/20/10/10/5/5). Verified empirically against real embeddings
-    # (tests/integration/test_matching_scenarios.py, spec §43's own
-    # examples): the local embedding model's raw cosine similarity barely
-    # distinguishes "Junior Backend Engineer" from "Senior Backend
-    # Engineer" for the same tech stack (~0.43-0.54 for both) - exactly
-    # the failure mode spec §8 itself warns about. At 10% weight,
-    # seniority's correct, confident signal (1.0 vs 0.05) couldn't
-    # overcome that. Rebalanced toward the two components that reliably
-    # separate these cases (seniority detection, title/role keyword
-    # matching) and away from the two that don't discriminate on
-    # seniority at all (the semantic components) - see docs/matching.md.
-    weight_candidate_semantic: float = 0.20
-    weight_intent_semantic: float = 0.12
-    weight_skills: float = 0.20
-    weight_role: float = 0.15
-    weight_seniority: float = 0.28
+    # Deliberately far from spec §8's suggested 30/20/20/10/10/5/5.
+    # Measured on the real data (3,100 jobs, this CV): the local model's
+    # raw cosine similarity ranges 0.15-0.55 for the CV and 0.10-0.50 for
+    # the role intent even on perfect matches, and barely separates
+    # "Junior" from "Senior" for the same stack - so the semantic scores
+    # are calibrated to that range and weighted lightly, while seniority
+    # detection and skill overlap - the components that actually separate
+    # good from bad here - carry the score.
+    role_gate_floor: float = 0.2
+    weight_seniority: float = 0.45
+    weight_skills: float = 0.30
+    weight_candidate_semantic: float = 0.12
+    weight_intent_semantic: float = 0.08
     weight_location: float = 0.03
     weight_recency: float = 0.02
+    # Raw cosine similarity is mapped linearly onto [0, 1] between these
+    # (the 5th/99th percentiles observed for this model); outside is clamped.
+    semantic_candidate_floor: float = 0.15
+    semantic_candidate_ceiling: float = 0.55
+    semantic_intent_floor: float = 0.10
+    semantic_intent_ceiling: float = 0.50
 
     # --- Twilio WhatsApp (Phase 7) ---
     twilio_account_sid: str = ""

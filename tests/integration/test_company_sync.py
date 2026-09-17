@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from pathlib import Path
 
@@ -122,11 +122,7 @@ def test_url_variant_of_same_board_does_not_create_a_second_source(
 
     _mock_rows(
         monkeypatch,
-        [
-            CompanySheetRow(
-                name="Acme", url="https://job-boards.greenhouse.io/acme?offices%5B%5D=1"
-            )
-        ],
+        [CompanySheetRow(name="Acme", url="https://job-boards.greenhouse.io/acme?offices%5B%5D=1")],
     )
     result = company_sync.sync_companies_from_sheet(db_session)
 
@@ -310,7 +306,9 @@ def test_embedded_board_resolution_updates_the_generic_source_in_place(
         _RESOLUTIONS,
         page,
         ResolvedSource(
-            CareerSourceType.COMEET, "63.00B", board_url="https://www.comeet.com/jobs/embedded-test/63.00B"
+            CareerSourceType.COMEET,
+            "63.00B",
+            board_url="https://www.comeet.com/jobs/embedded-test/63.00B",
         ),
     )
     result = company_sync.sync_companies_from_sheet(db_session)

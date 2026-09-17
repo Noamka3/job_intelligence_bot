@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
+from app.api.routes.applications import router as applications_router
 from app.api.routes.candidate import router as candidate_router
 from app.api.routes.companies import router as companies_router
 from app.api.routes.dashboard import router as dashboard_router
@@ -38,6 +39,7 @@ app.include_router(jobs_router)
 app.include_router(matches_router)
 app.include_router(operations_router)
 app.include_router(dashboard_router)
+app.include_router(applications_router)
 
 # The React dashboard (frontend/, built with `npm run build`) is served
 # from this same process under /app - one thing to run, no CORS. The JSON

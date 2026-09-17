@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { ApiError, fetchJob, fetchMatchForJob } from "../api/client";
 import type { FeedbackAction, Match } from "../api/types";
+import { CompanyTag } from "../components/CompanyTag";
 import { FeedbackButtons } from "../components/FeedbackButtons";
 import { Pill, ScoreBadge, Skeletons } from "../components/ui";
 import { useAsync } from "../hooks/useAsync";
@@ -59,17 +60,27 @@ export function JobPage() {
         <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
           {m && <ScoreBadge score={m.final_score} large />}
           <div>
+            {m && (
+              <div style={{ marginBottom: 10 }}>
+                <CompanyTag name={m.company_name} large />
+              </div>
+            )}
             <h1 className="page__title bidi">{j.title}</h1>
             <p className="page__subtitle">
-              <span className="bidi">{m?.company_name ?? ""}</span>
-              {j.location_text && <span className="bidi"> · {j.location_text}</span>}
-              {j.department && <span className="bidi"> · {j.department}</span>}
+              {j.location_text && <span className="bidi">{j.location_text}</span>}
+              {j.location_text && j.department && " · "}
+              {j.department && <span className="bidi">{j.department}</span>}
             </p>
             <div className="row" style={{ marginTop: 10 }}>
               {j.employment_type !== "unknown" && <Pill>{EMPLOYMENT[j.employment_type]}</Pill>}
               {j.remote_type !== "unknown" && <Pill>{REMOTE[j.remote_type]}</Pill>}
               {j.status !== "active" && <Pill tone="bad">המשרה כבר לא מפורסמת</Pill>}
-              <Pill>{SOURCE_LABELS[(m?.source_type ?? "generic_html") as never]}</Pill>
+              <Pill>{SOURCE_LABELS[m?.source_type ?? "generic_html"]}</Pill>
+              {currentFeedback === "applied" && (
+                <Link to="/applications" className="pill pill--accent">
+                  הגשת - לעדכון התהליך
+                </Link>
+              )}
             </div>
           </div>
         </div>
@@ -104,7 +115,7 @@ export function JobPage() {
         <section className="card">
           <div className="row" style={{ justifyContent: "space-between", marginBottom: 14 }}>
             <h2 className="section-title" style={{ margin: 0 }}>
-              למה הציון הזה
+              למה {Math.round(m.final_score)}% התאמה
             </h2>
             <FeedbackButtons jobId={j.id} current={currentFeedback} onChange={setFeedback} />
           </div>
@@ -119,7 +130,7 @@ export function JobPage() {
                   <div className="bar__track" role="meter" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label={label}>
                     <div className={`bar__fill bar__fill--${tone}`} style={{ width: `${pct}%` }} />
                   </div>
-                  <span className="bar__value">{pct}</span>
+                  <span className="bar__value">{pct}%</span>
                 </div>
               );
             })}

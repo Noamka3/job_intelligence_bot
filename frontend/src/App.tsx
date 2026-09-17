@@ -1,4 +1,5 @@
 import { BrowserRouter, NavLink, Route, Routes } from "react-router-dom";
+import { ApplicationsPage } from "./pages/ApplicationsPage";
 import { JobPage } from "./pages/JobPage";
 import { MatchesPage } from "./pages/MatchesPage";
 import { ProfilePage } from "./pages/ProfilePage";
@@ -6,8 +7,9 @@ import { StatusPage } from "./pages/StatusPage";
 
 const LINKS = [
   { to: "/", label: "התאמות" },
-  { to: "/status", label: "מצב המערכת" },
+  { to: "/applications", label: "ההגשות שלי" },
   { to: "/profile", label: "הפרופיל שלי" },
+  { to: "/status", label: "מצב המערכת" },
 ];
 
 export function App() {
@@ -41,6 +43,7 @@ export function App() {
       <Routes>
         <Route path="/" element={<MatchesPage />} />
         <Route path="/jobs/:id" element={<JobPage />} />
+        <Route path="/applications" element={<ApplicationsPage />} />
         <Route path="/status" element={<StatusPage />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="*" element={<MatchesPage />} />

@@ -45,10 +45,16 @@ def test_upload_resume_then_fetch_active(api_client: TestClient) -> None:
     assert upload_response.status_code == 201
     body = upload_response.json()
     assert body["is_active"] is True
+    # The response itself is sent before extraction/rescoring...
+    assert body["processing_status"] == "pending"
 
     active_response = api_client.get("/candidate/active")
     assert active_response.status_code == 200
     assert active_response.json()["id"] == body["id"]
+    # ...and the TestClient runs the background task before returning,
+    # so by now the profile has been fully processed.
+    assert active_response.json()["processing_status"] == "done"
+    assert active_response.json()["structured_profile"]["seniority"] == "junior"
 
 
 def test_upload_resume_rejects_unsupported_extension(api_client: TestClient) -> None:
@@ -93,6 +99,20 @@ def test_upload_uses_only_the_basename_of_a_client_supplied_path(api_client: Tes
     )
     assert response.status_code == 201
     assert response.json()["filename"] == "cv.docx"
+
+
+def test_profile_text_exposes_what_was_read_from_the_file(api_client: TestClient) -> None:
+    content = _docx_bytes("Jane Doe - Junior Software Engineer\nPython, Docker")
+    profile_id = api_client.post(
+        "/candidate/resume", files={"file": ("cv.docx", content, "application/octet-stream")}
+    ).json()["id"]
+
+    response = api_client.get(f"/candidate/profiles/{profile_id}/text")
+
+    assert response.status_code == 200
+    assert "Python, Docker" in response.json()["raw_text"]
+    assert response.json()["normalized_text"]
+    assert api_client.get("/candidate/profiles/999999/text").status_code == 404
 
 
 def test_active_profile_returns_404_when_none_exists(api_client: TestClient) -> None:

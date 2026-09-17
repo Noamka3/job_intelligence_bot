@@ -69,6 +69,8 @@ class JobPosting(Base, TimestampMixin):
     location_text: Mapped[str | None] = mapped_column(String(500))
     normalized_location: Mapped[str | None] = mapped_column(String(255))
     country: Mapped[str | None] = mapped_column(String(100))
+    # A key from app.services.jobs.location.REGIONS, set at ingest.
+    region: Mapped[str | None] = mapped_column(String(32), index=True)
     city: Mapped[str | None] = mapped_column(String(255))
     remote_type: Mapped[RemoteType] = mapped_column(
         Enum(RemoteType, name="remote_type"), nullable=False, default=RemoteType.UNKNOWN

@@ -10,7 +10,8 @@ does not block the event loop in practice.
 
 from __future__ import annotations
 
-from collections.abc import Generator
+from collections.abc import Callable, Generator
+from contextlib import AbstractContextManager
 
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -53,3 +54,11 @@ def get_db() -> Generator[Session, None, None]:
         yield db
     finally:
         db.close()
+
+
+def get_background_session_factory() -> Callable[[], AbstractContextManager[Session]]:
+    """FastAPI dependency for work that continues after the response (a
+    BackgroundTask): it must open its own session, since the request's
+    one is closed by then. Overridable in tests to hand back the
+    transactional test session instead."""
+    return get_session_factory()
