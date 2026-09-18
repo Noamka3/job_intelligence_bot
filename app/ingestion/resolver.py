@@ -19,11 +19,13 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 from urllib.parse import ParseResult, parse_qs, urljoin, urlparse
 
 import httpx
 
+from app.ingestion.adapters.lever import postings_api_base
 from app.models.enums import CareerSourceType
 
 logger = logging.getLogger(__name__)
@@ -61,8 +63,15 @@ _COMEET_INIT_UID_RE = re.compile(rf"[\"']company-uid[\"']\s*:\s*[\"']({_COMEET_U
 _GREENHOUSE_EMBED_RE = re.compile(
     rf"boards\.greenhouse\.io/embed/job_board(?:/js)?\?(?:[^\"'\s]*?&)?for=({_SLUG})"
 )
-_GREENHOUSE_BOARD_RE = re.compile(rf"(?:job-boards|boards)\.greenhouse\.io/({_SLUG})(?=[/\"'?\s])")
-_LEVER_RE = re.compile(rf"jobs\.lever\.co/({_SLUG})(?=[/\"'?\s]|$)")
+# The board's own pages, or its API called from the company page's JS
+# (VIA fetches boards-api.greenhouse.io/v1/boards/via/jobs itself).
+_GREENHOUSE_BOARD_RE = re.compile(
+    rf"(?:job-boards\.greenhouse\.io|boards\.greenhouse\.io|boards-api\.greenhouse\.io/v1/boards)"
+    rf"/({_SLUG})(?=[/\"'?\s])"
+)
+# Lever's EU region has its own hosts (Mobileye links jobs.eu.lever.co);
+# the host is kept so the adapter asks the matching API.
+_LEVER_RE = re.compile(rf"(jobs(?:\.eu)?\.lever\.co)/({_SLUG})(?=[/\"'?\s]|$)")
 _ASHBY_RE = re.compile(
     rf"(?:jobs\.ashbyhq\.com|api\.ashbyhq\.com/posting-api/job-board)/({_SLUG})(?=[/\"'?\s]|$)"
 )
@@ -85,33 +94,28 @@ _COMEET_PLUGIN_MARKER_RE = re.compile(
 _COMEET_POSITION_LINK_RE = re.compile(rf"href=[\"']([^\"'\s]*/{_COMEET_UID}/?[^\"'\s]*)[\"']")
 _COMEET_ANY_UID_RE = re.compile(rf"company[-_]uid[\"']?\s*[:=]\s*[\"']({_COMEET_UID})[\"']")
 _MAX_POSITION_PROBES = 2
+# A page built on the Comeet JS API may keep the company uid in one of
+# its own scripts instead (Plus500's general.js loads the API and calls
+# the positions endpoint itself), so those are read too.
+_COMEET_API_PATH_RE = re.compile(rf"careers-api/2\.0/company/({_COMEET_UID})")
+_SCRIPT_SRC_RE = re.compile(r"<script[^>]+src=[\"']([^\"']+)[\"']", re.I)
+_MAX_SCRIPT_PROBES = 10
 # Boards that a company page loads purely from JS leave no board URL in
 # the HTML (JFrog, AppsFlyer) - only a hint that the ATS is in play. The
-# board token is then the company's own domain label, *verified* by the
-# ATS's public API answering for it: no guess is ever stored unverified.
-_BoardProbe = tuple[CareerSourceType, re.Pattern[str], str, str, str | None]
-_BOARD_BY_DOMAIN_LABEL: tuple[_BoardProbe, ...] = (
+# board token is then the company's own domain label, kept only if the
+# ATS's public API answers for it (_board_answers).
+_BOARD_HINTS: tuple[tuple[CareerSourceType, re.Pattern[str], str], ...] = (
     (
         CareerSourceType.GREENHOUSE,
         re.compile(r"greenhouse|[?&]gh_(?:department|jid|src)=", re.I),
-        "https://boards-api.greenhouse.io/v1/boards/{slug}/jobs",
         "https://job-boards.greenhouse.io/{slug}",
-        "jobs",
     ),
     (
         CareerSourceType.LEVER,
         re.compile(r"lever\.co|\blever\b", re.I),
-        "https://api.lever.co/v0/postings/{slug}?mode=json",
         "https://jobs.lever.co/{slug}",
-        None,
     ),
-    (
-        CareerSourceType.ASHBY,
-        re.compile(r"ashby", re.I),
-        "https://api.ashbyhq.com/posting-api/job-board/{slug}",
-        "https://jobs.ashbyhq.com/{slug}",
-        "jobs",
-    ),
+    (CareerSourceType.ASHBY, re.compile(r"ashby", re.I), "https://jobs.ashbyhq.com/{slug}"),
 )
 _SMARTRECRUITERS_RE = re.compile(
     rf"(?:(?:jobs|careers)\.smartrecruiters\.com|api\.smartrecruiters\.com/v1/companies)/({_SLUG})"
@@ -247,69 +251,104 @@ def _detect_embedded_ats(body: str) -> ResolvedSource | None:
     # Boards referenced from inline JSON come with escaped slashes
     # ("https:\/\/job-boards.greenhouse.io\/similarweb\/jobs\/1").
     text = body.replace("\\/", "/")
+    return next((board for board in _embedded_boards(text) if _board_answers(board)), None)
 
-    link = _COMEET_BOARD_LINK_RE.search(text)
-    if link:
+
+def _embedded_boards(text: str) -> Iterator[ResolvedSource]:
+    """Every board the page references, most specific first. A page can
+    carry more than one: Nexxen's still loads the Greenhouse embed it
+    migrated away from next to the Ashby board it uses now, so the caller
+    keeps the first one whose API actually answers."""
+    if link := _COMEET_BOARD_LINK_RE.search(text):
         slug, uid = link.group(1), link.group(2)
-        return ResolvedSource(
+        yield ResolvedSource(
             CareerSourceType.COMEET, uid, board_url=f"https://www.comeet.com/jobs/{slug}/{uid}"
         )
-    init = _COMEET_INIT_UID_RE.search(text)
-    if init:
+    if init := _COMEET_INIT_UID_RE.search(text):
         # COMEET.init({"token": ..., "company-uid": ...}) on the company's
         # own page - the adapter reads both from that page (no board_url).
-        return ResolvedSource(CareerSourceType.COMEET, init.group(1))
+        yield ResolvedSource(CareerSourceType.COMEET, init.group(1))
 
     embed = _GREENHOUSE_EMBED_RE.search(text)
-    token = embed.group(1) if embed else _first_slug(_GREENHOUSE_BOARD_RE, text)
-    if token:
-        return ResolvedSource(
+    board = embed or _first_board(_GREENHOUSE_BOARD_RE, text)
+    if board:
+        token = board.group(1)
+        yield ResolvedSource(
             CareerSourceType.GREENHOUSE,
             token,
             board_url=f"https://job-boards.greenhouse.io/{token}",
         )
-
-    client = _first_slug(_LEVER_RE, text)
-    if client:
-        return ResolvedSource(
-            CareerSourceType.LEVER, client, board_url=f"https://jobs.lever.co/{client}"
-        )
-
-    client = _first_slug(_ASHBY_RE, text)
-    if client:
-        return ResolvedSource(
+    if lever := _first_board(_LEVER_RE, text):
+        host, client = lever.group(1), lever.group(2)
+        yield ResolvedSource(CareerSourceType.LEVER, client, board_url=f"https://{host}/{client}")
+    if ashby := _first_board(_ASHBY_RE, text):
+        client = ashby.group(1)
+        yield ResolvedSource(
             CareerSourceType.ASHBY, client, board_url=f"https://jobs.ashbyhq.com/{client}"
         )
-
-    subdomain = _first_slug(_WORKABLE_RE, text)
-    if subdomain:
-        return ResolvedSource(
+    if workable := _first_board(_WORKABLE_RE, text):
+        subdomain = workable.group(1)
+        yield ResolvedSource(
             CareerSourceType.WORKABLE,
             subdomain,
             board_url=f"https://apply.workable.com/{subdomain}/",
         )
-
     for workday in _WORKDAY_RE.finditer(text):
         resolved = _workday_board(workday.group(0))
         if resolved is not None:
-            return resolved
-
-    company = _first_slug(_SMARTRECRUITERS_RE, text)
-    if company:
-        return ResolvedSource(
+            yield resolved
+            break
+    if smart := _first_board(_SMARTRECRUITERS_RE, text):
+        company = smart.group(1)
+        yield ResolvedSource(
             CareerSourceType.SMARTRECRUITERS,
             company,
             board_url=f"https://jobs.smartrecruiters.com/{company}",
         )
-    return None
 
 
-def _first_slug(pattern: re.Pattern[str], text: str) -> str | None:
+def _first_board(pattern: re.Pattern[str], text: str) -> re.Match[str] | None:
+    """First match whose last group - the board slug - is a real token."""
     for match in pattern.finditer(text):
-        slug = match.group(1)
-        if slug.lower() not in _NOT_A_BOARD_SLUG:
-            return slug
+        if match.group(pattern.groups).lower() not in _NOT_A_BOARD_SLUG:
+            return match
     return None
+
+
+def _board_api_url(board: ResolvedSource) -> str | None:
+    """The public list endpoint the adapter for this board will call;
+    None for ATSes without one (Comeet needs a token, Workday a POST)."""
+    slug = board.external_identifier
+    match board.source_type:
+        case CareerSourceType.GREENHOUSE:
+            return f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs"
+        case CareerSourceType.LEVER:
+            host = urlparse(board.board_url or "").hostname or "jobs.lever.co"
+            return f"{postings_api_base(host)}/{slug}?mode=json"
+        case CareerSourceType.ASHBY:
+            return f"https://api.ashbyhq.com/posting-api/job-board/{slug}"
+        case CareerSourceType.WORKABLE:
+            return f"https://apply.workable.com/api/v1/widget/accounts/{slug}"
+    return None
+
+
+def _board_answers(board: ResolvedSource) -> bool:
+    """Keep a board only if its ATS answers for it, so a stale embed or a
+    guessed token is never stored to fail on every crawl. Boards without a
+    cheap public check are trusted as found."""
+    api_url = _board_api_url(board)
+    if api_url is None:
+        return True
+    try:
+        with httpx.Client(follow_redirects=True, timeout=_PROBE_TIMEOUT_SECONDS) as client:
+            response = client.get(api_url, headers={"User-Agent": _PROBE_USER_AGENT})
+        if response.status_code != 200:
+            return False
+        payload = response.json()
+    except (httpx.HTTPError, httpx.InvalidURL, ValueError):
+        return False
+    listing = payload if isinstance(payload, list) else payload.get("jobs")
+    return isinstance(listing, list)
 
 
 def _domain_label(url: str) -> str:
@@ -335,24 +374,49 @@ def _resolve_comeet_plugin(page_url: str, body: str) -> ResolvedSource | None:
     if not position_links or not (plugin_present or len(position_links) >= 3):
         return None
 
-    uid: str | None = None
     for link in position_links[:_MAX_POSITION_PROBES]:
         try:
             uid_match = _COMEET_ANY_UID_RE.search(_fetch_capped(link))
         except (httpx.HTTPError, httpx.InvalidURL):
             continue
         if uid_match:
-            uid = uid_match.group(1)
-            break
-    if uid is None:
-        return None
+            return _verified_comeet_board(page_url, uid_match.group(1))
+    return None
 
+
+def _resolve_comeet_from_scripts(page_url: str, body: str) -> ResolvedSource | None:
+    """Plus500: the page only has Comeet's container markup; its own
+    general.js loads the JS API and calls the positions endpoint with the
+    company uid. The page's own scripts are read for it."""
+    if "comeet" not in body.lower():
+        return None
+    page_host = urlparse(page_url).hostname
+    scripts = [
+        script
+        for script in (urljoin(page_url, m.group(1)) for m in _SCRIPT_SRC_RE.finditer(body))
+        if urlparse(script).hostname == page_host
+    ]
+    for script in scripts[:_MAX_SCRIPT_PROBES]:
+        try:
+            js = _fetch_capped(script)
+        except (httpx.HTTPError, httpx.InvalidURL):
+            continue
+        uid_match = _COMEET_ANY_UID_RE.search(js) or _COMEET_API_PATH_RE.search(js)
+        if uid_match:
+            return _verified_comeet_board(page_url, uid_match.group(1))
+    return None
+
+
+def _verified_comeet_board(page_url: str, uid: str) -> ResolvedSource | None:
+    """The public board for a company uid is comeet.com/jobs/{slug}/{uid}
+    with the company's domain label as slug. A wrong slug redirects to
+    Comeet's homepage, so the guess is kept only when the board page
+    serves COMPANY_DATA for that uid."""
     board_url = f"https://www.comeet.com/jobs/{_domain_label(page_url)}/{uid}"
     try:
         board_html = _fetch_capped(board_url)
     except (httpx.HTTPError, httpx.InvalidURL):
         return None
-    # A wrong slug redirects to comeet.com's homepage (no COMPANY_DATA).
     if "COMPANY_DATA" in board_html and uid in board_html:
         return ResolvedSource(CareerSourceType.COMEET, uid, board_url=board_url)
     return None
@@ -360,27 +424,16 @@ def _resolve_comeet_plugin(page_url: str, body: str) -> ResolvedSource | None:
 
 def _verify_board_by_domain_label(page_url: str, body: str) -> ResolvedSource | None:
     slug = _domain_label(page_url)
-    for source_type, hint, api_url, board_url, list_key in _BOARD_BY_DOMAIN_LABEL:
+    for source_type, hint, board_url in _BOARD_HINTS:
         if not hint.search(body):
             continue
-        try:
-            with httpx.Client(follow_redirects=True, timeout=_PROBE_TIMEOUT_SECONDS) as client:
-                response = client.get(
-                    api_url.format(slug=slug), headers={"User-Agent": _PROBE_USER_AGENT}
-                )
-            if response.status_code != 200:
-                continue
-            payload = response.json()
-        except (httpx.HTTPError, httpx.InvalidURL, ValueError):
-            continue
-        listing = payload.get(list_key) if list_key else payload
-        if not isinstance(listing, list):
-            continue
-        logger.info(
-            "career source board verified by domain label",
-            extra={"url": page_url, "source_type": source_type.value, "slug": slug},
-        )
-        return ResolvedSource(source_type, slug, board_url=board_url.format(slug=slug))
+        guess = ResolvedSource(source_type, slug, board_url=board_url.format(slug=slug))
+        if _board_answers(guess):
+            logger.info(
+                "career source board verified by domain label",
+                extra={"url": page_url, "source_type": source_type.value, "slug": slug},
+            )
+            return guess
     return None
 
 
@@ -404,6 +457,7 @@ def _probe_page(url: str) -> ResolvedSource:
     embedded = (
         _detect_embedded_ats(body)
         or _resolve_comeet_plugin(url, body)
+        or _resolve_comeet_from_scripts(url, body)
         or _verify_board_by_domain_label(url, body)
     )
     if embedded is not None:

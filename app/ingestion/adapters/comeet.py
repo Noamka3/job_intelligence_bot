@@ -27,10 +27,11 @@ _COMPANY_DATA_RE = re.compile(r"COMPANY_DATA\s*=\s*(\{.*?\});", re.DOTALL)
 # A company's own page embedding the Comeet JS API (verified on real
 # pages: eToro, Checkmarx): COMEET.init({"token": "...", "company-uid":
 # "41.009", ...}) - a JS object literal with comments, not strict JSON,
-# hence regexes scoped to that call rather than json.loads.
+# hence regexes scoped to that call rather than json.loads. The key
+# quotes are optional: Alice's page writes `token: '...'` bare.
 _COMEET_INIT_RE = re.compile(r"COMEET\.init\s*\(\s*\{(.{0,6000}?)\}\s*\)", re.DOTALL)
-_INIT_TOKEN_RE = re.compile(r"[\"']token[\"']\s*:\s*[\"']([A-Za-z0-9]+)[\"']")
-_INIT_UID_RE = re.compile(r"[\"']company-uid[\"']\s*:\s*[\"']([A-Z0-9]{2}\.[A-Z0-9]{3})[\"']")
+_INIT_TOKEN_RE = re.compile(r"(?<![\w-])[\"']?token[\"']?\s*:\s*[\"']([A-Za-z0-9]+)[\"']")
+_INIT_UID_RE = re.compile(r"[\"']?company-uid[\"']?\s*:\s*[\"']([A-Z0-9]{2}\.[A-Z0-9]{3})[\"']")
 
 
 class ComeetCredentialsNotFoundError(RuntimeError):

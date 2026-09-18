@@ -39,6 +39,24 @@ def test_list_jobs_captures_full_posting_in_raw() -> None:
 
 
 @respx.mock
+def test_eu_region_boards_are_read_from_the_eu_api() -> None:
+    """Mobileye's board is jobs.eu.lever.co; api.lever.co answers 404 for
+    the client, only api.eu.lever.co knows it."""
+    eu_source = CareerSource(
+        source_type=CareerSourceType.LEVER,
+        source_url="https://jobs.eu.lever.co/mobileye",
+        external_identifier="mobileye",
+    )
+    respx.get("https://api.eu.lever.co/v0/postings/mobileye", params={"mode": "json"}).mock(
+        return_value=httpx.Response(200, json=[_POSTING])
+    )
+
+    stubs = LeverAdapter().list_jobs(eu_source)
+
+    assert len(stubs) == 1
+
+
+@respx.mock
 def test_fetch_job_uses_cached_raw_without_a_second_network_call() -> None:
     # No respx route registered at all - if fetch_job tried to hit the
     # network instead of reusing stub.raw, respx would raise on the

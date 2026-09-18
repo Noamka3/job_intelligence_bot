@@ -105,15 +105,10 @@ class WorkdayAdapter:
 
     @staticmethod
     def _to_details(info: dict[str, Any], stub: JobStub) -> JobDetails:
-        locations = [info.get("location"), *(info.get("additionalLocations") or [])]
-        country = _descriptor(info.get("country"))
-        location_parts = [str(loc) for loc in locations if loc]
-        if country and not any(country.lower() in part.lower() for part in location_parts):
-            location_parts.append(str(country))
         return JobDetails(
             external_job_id=stub.external_job_id,
             title=str(info.get("title") or stub.title),
-            location_text=", ".join(location_parts) or stub.location_text,
+            location_text=_location_text(info) or stub.location_text,
             remote_type=_remote_type(info.get("remoteType")),
             employment_type=map_employment_type(_descriptor(info.get("timeType"))),
             description=html_to_text(info.get("jobDescription")),
@@ -122,6 +117,23 @@ class WorkdayAdapter:
             source_published_at=parse_timestamp(info.get("startDate")),
             source_updated_at=None,
         )
+
+
+def _location_text(info: dict[str, Any]) -> str:
+    """A posting open in several countries lists every office (a Medtronic
+    role: nine, 259 characters - more than the column holds). When it
+    names the country we asked the board for, only those offices are
+    kept: they are what the posting means here."""
+    locations = [
+        str(loc) for loc in (info.get("location"), *(info.get("additionalLocations") or [])) if loc
+    ]
+    target = get_settings().target_country.lower()
+    if target and (here := [loc for loc in locations if target in loc.lower()]):
+        return ", ".join(here)
+    country = _descriptor(info.get("country"))
+    if country and not any(country.lower() in loc.lower() for loc in locations):
+        locations.append(country)
+    return ", ".join(locations)
 
 
 def _body(facets: dict[str, list[str]], offset: int, search_text: str = "") -> dict[str, Any]:

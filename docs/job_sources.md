@@ -195,11 +195,19 @@ embed shapes now recognized, each verified on the named page:
 | `jobs.ashbyhq.com/X/embed`, `api.ashbyhq.com/posting-api/job-board/X` | Nexxen, Crusoe | `ashby` |
 | `apply.workable.com/X/`, `apply.workable.com/api/v1/widget/accounts/X` | Humanz, Anzu | `workable` |
 | Any `{tenant}.{wdN}.myworkdayjobs.com/...` link | Unity, Samsung, Mastercard, Ribbon, Leidos | `workday` |
+| `boards-api.greenhouse.io/v1/boards/X/jobs` fetched by the page's own JS | VIA | `greenhouse` |
+| Links into `jobs.eu.lever.co/X/...` (Lever's EU region, own API host) | Mobileye | `lever`, read from `api.eu.lever.co` |
+| Comeet JS API loaded, company uid only in the site's own script (`careers-api/2.0/company/{uid}/positions`) | Plus500 | `comeet`, public board verified as for the plugin |
+| `COMEET.init({ token: '...', 'company-uid': ... })` with bare keys | Alice | `comeet` (the adapter accepts unquoted keys) |
+| Two boards on one page, one dead (a Greenhouse embed left behind after moving to Ashby) | Nexxen | the first whose public API answers - every Greenhouse/Lever/Ashby/Workable reference is checked that way before it is stored |
 
 Still `generic_html` after all that (verified): pages whose list is
-injected by JS with no board reference at all (hibob, Mobileye), and
+injected by JS with no board reference at all (hibob, Team8, TriEye's
+WordPress plugin page, which carries a token but no company uid), and
 pages behind a WAF that 403s non-browser clients (Nayax, Check Point,
-Fiverr, ...). Those are the browser-fallback's job (not built).
+Fiverr, ...). Those are the browser-fallback's job (not built). Ribbon's
+Workday tenant (`vhr-genband`) answers 422 to every CXS request, even a
+browser-like one, so it is in the same bucket despite the hostname.
 
 ### Generic HTML (Phase 8)
 No API and no board: the listing page's job links are found from its own

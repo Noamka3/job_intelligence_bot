@@ -10,6 +10,7 @@ call - it reuses JobStub.raw.
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import urlparse
 
 from app.ingestion.adapters._http import get_json
 from app.ingestion.adapters._util import map_employment_type, parse_timestamp
@@ -18,6 +19,13 @@ from app.models.career_source import CareerSource
 from app.services.jobs.html_text import html_to_text
 
 _BASE_URL = "https://api.lever.co/v0/postings"
+_EU_BASE_URL = "https://api.eu.lever.co/v0/postings"
+
+
+def postings_api_base(board_host: str) -> str:
+    """Lever's EU region has its own hosts: Mobileye's board is
+    jobs.eu.lever.co and only api.eu.lever.co knows the client."""
+    return _EU_BASE_URL if board_host.endswith("eu.lever.co") else _BASE_URL
 
 
 class LeverAdapter:
@@ -26,7 +34,7 @@ class LeverAdapter:
         if not client:
             return []
 
-        postings = get_json(f"{_BASE_URL}/{client}", params={"mode": "json"})
+        postings = get_json(f"{_api_base(source)}/{client}", params={"mode": "json"})
         return [self._to_stub(posting, source) for posting in postings]
 
     def fetch_job(self, source: CareerSource, stub: JobStub) -> JobDetails:
@@ -34,7 +42,7 @@ class LeverAdapter:
         if posting is None:
             client = source.external_identifier
             posting = get_json(
-                f"{_BASE_URL}/{client}/{stub.external_job_id}", params={"mode": "json"}
+                f"{_api_base(source)}/{client}/{stub.external_job_id}", params={"mode": "json"}
             )
         return self._to_details(posting, stub)
 
@@ -83,3 +91,7 @@ class LeverAdapter:
             source_published_at=parse_timestamp(posting.get("createdAt")),
             source_updated_at=None,
         )
+
+
+def _api_base(source: CareerSource) -> str:
+    return postings_api_base(urlparse(source.source_url).hostname or "")

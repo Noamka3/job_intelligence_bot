@@ -264,6 +264,31 @@ def test_source_re_resolving_to_a_better_type_is_updated_in_place(
     assert source.source_type == CareerSourceType.JSONLD
 
 
+def test_a_failed_probe_keeps_the_board_found_behind_the_page(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Atera's row is its own careers page; the Comeet board found behind
+    it is stored under the board's URL. A later sync whose probe fails
+    (timeout, WAF) resolves the page to generic_html - that used to retire
+    the board for a generic copy of the page, closing all its jobs."""
+    url = "https://www.atera.example/careers/"
+    board = ResolvedSource(
+        CareerSourceType.COMEET, "63.00B", board_url="https://www.comeet.com/jobs/atera/63.00B"
+    )
+    monkeypatch.setitem(_RESOLUTIONS, url, board)
+    _mock_rows(monkeypatch, [CompanySheetRow(name="Atera", url=url)])
+    company_sync.sync_companies_from_sheet(db_session)
+
+    monkeypatch.setitem(_RESOLUTIONS, url, ResolvedSource(CareerSourceType.GENERIC_HTML, None))
+    result = company_sync.sync_companies_from_sheet(db_session)
+
+    assert result.sources_created == 0
+    (source,) = _sources_of(db_session, "atera")
+    assert source.source_type == CareerSourceType.COMEET
+    assert source.enabled
+    assert source.source_url == "https://www.comeet.com/jobs/atera/63.00B"
+
+
 def test_row_pointing_at_a_different_board_retires_the_old_source_and_its_jobs(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:

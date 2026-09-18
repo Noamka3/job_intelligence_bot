@@ -92,6 +92,35 @@ def test_credentials_are_read_from_a_company_page_embedding_the_js_api() -> None
 
 
 @respx.mock
+def test_credentials_are_read_when_the_init_keys_are_unquoted() -> None:
+    """Alice's page writes the init as a bare JS object literal:
+    COMEET.init({ token: '...', 'company-uid': 'D5.005', ... })."""
+    page = CareerSource(
+        source_type=CareerSourceType.COMEET,
+        source_url="https://alice.example/careers",
+        external_identifier="D5.005",
+    )
+    respx.get("https://alice.example/careers").mock(
+        return_value=httpx.Response(
+            200,
+            text=(
+                "<script> window.comeetInit = function () { COMEET.init({ "
+                "token: '5D51D29347D2', 'company-uid': 'D5.005', 'css-cache': false, }); };"
+                "</script>"
+            ),
+        )
+    )
+    respx.get(
+        "https://www.comeet.com/careers-api/2.0/company/D5.005/positions",
+        params={"token": "5D51D29347D2", "details": "false"},
+    ).mock(return_value=httpx.Response(200, json=[_POSITION_STUB]))
+
+    stubs = ComeetAdapter().list_jobs(page)
+
+    assert stubs[0].raw == {"company_uid": "D5.005", "token": "5D51D29347D2"}
+
+
+@respx.mock
 def test_fetch_job_splits_description_into_sections() -> None:
     respx.get(
         "https://www.comeet.com/careers-api/2.0/company/F1.008/positions/AC.F64",

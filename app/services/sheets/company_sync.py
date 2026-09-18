@@ -202,6 +202,12 @@ def _ensure_career_source(
                 CareerSource.external_identifier == resolved.external_identifier,
             )
         ).scalar_one_or_none()
+    if existing is None and resolved.source_type == CareerSourceType.GENERIC_HTML:
+        # A failed probe (timeout, WAF) resolves to generic_html. A board
+        # found behind this page on an earlier sync is stored under the
+        # board's own URL, so it would not be found below and would be
+        # retired for a generic copy of the page - keep it instead.
+        existing = _enabled_board_of(db, company)
     if existing is None:
         # Either the URL as stored previously (before a resolver
         # improvement recognized the embedded board) or the board itself.
@@ -247,6 +253,23 @@ def _ensure_career_source(
     for other in others:
         _retire_source(db, other)
     return created
+
+
+def _enabled_board_of(db: Session, company: Company) -> CareerSource | None:
+    """The company's crawled source, if it is a real board (not the
+    generic fallback and not unsupported)."""
+    return db.execute(
+        select(CareerSource)
+        .where(
+            CareerSource.company_id == company.id,
+            CareerSource.enabled.is_(True),
+            CareerSource.source_type.notin_(
+                [CareerSourceType.GENERIC_HTML, CareerSourceType.UNSUPPORTED]
+            ),
+        )
+        .order_by(CareerSource.id)
+        .limit(1)
+    ).scalar_one_or_none()
 
 
 def _reconcile_existing_source(existing: CareerSource, url: str, resolved: ResolvedSource) -> None:

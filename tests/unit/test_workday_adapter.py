@@ -157,3 +157,23 @@ def test_fetch_job_reads_job_posting_info() -> None:
     assert details.source_published_at is not None
     assert details.source_published_at.tzinfo is not None
     assert details.apply_url == "https://acme.wd1.myworkdayjobs.com/External/job/x_R76497-1"
+
+
+def test_details_keep_only_the_offices_in_the_target_country() -> None:
+    """A Medtronic role open in nine countries listed 259 characters of
+    offices and overflowed the location column; the board was asked for
+    Israel, so the Israeli offices are what the posting means here."""
+    stub = WorkdayAdapter()._to_stub(  # noqa: SLF001 - test-only access
+        _posting("R1", "Training and Education Manager"),
+        "https://acme.wd1.myworkdayjobs.com/External",
+    )
+    info = {
+        "title": "Training and Education Manager",
+        "location": "Paris, Île de France, France",
+        "additionalLocations": ["Herzliya, Tel Aviv, Israel", "Madrid, Madrid, Spain"],
+        "country": {"descriptor": "France"},
+    }
+
+    details = WorkdayAdapter()._to_details(info, stub)  # noqa: SLF001 - test-only access
+
+    assert details.location_text == "Herzliya, Tel Aviv, Israel"

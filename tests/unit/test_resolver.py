@@ -137,8 +137,16 @@ def test_probe_detects_comeet_board_links_and_derives_the_board_url() -> None:
     assert resolved.board_url == "https://www.comeet.com/jobs/atera/63.00B"
 
 
+def _board_api(url: str, *, alive: bool = True) -> None:
+    """A board reference is kept only if its ATS's public API answers."""
+    response = httpx.Response(200, json={"jobs": []}) if alive else httpx.Response(404)
+    respx.get(url).mock(return_value=response)
+
+
 @respx.mock
 def test_probe_detects_greenhouse_embed_including_json_escaped_links() -> None:
+    _board_api("https://boards-api.greenhouse.io/v1/boards/nexxen/jobs")
+    _board_api("https://boards-api.greenhouse.io/v1/boards/similarweb/jobs")
     embed = _probe(
         '<script src="https://boards.greenhouse.io/embed/job_board/js?for=nexxen"></script>'
     )
@@ -155,6 +163,8 @@ def test_probe_detects_greenhouse_embed_including_json_escaped_links() -> None:
 
 @respx.mock
 def test_probe_detects_ashby_workable_and_embedded_workday() -> None:
+    _board_api("https://api.ashbyhq.com/posting-api/job-board/nexxen")
+    _board_api("https://apply.workable.com/api/v1/widget/accounts/anzu")
     ashby = _probe(
         '<div id="ashby_embed"></div><script src="https://jobs.ashbyhq.com/nexxen/embed?version=2"></script>'
     )
@@ -276,7 +286,75 @@ def test_probe_verifies_a_board_by_domain_label_only_with_an_ats_hint() -> None:
 
 
 @respx.mock
+def test_probe_keeps_the_board_whose_api_answers() -> None:
+    """Nexxen's page still loads the Greenhouse embed it migrated away
+    from next to the Ashby board it uses now; the dead token used to be
+    stored and 404 on every crawl."""
+    _board_api("https://boards-api.greenhouse.io/v1/boards/nexxen/jobs", alive=False)
+    _board_api("https://api.ashbyhq.com/posting-api/job-board/nexxen")
+
+    resolved = _probe(
+        '<script src="https://boards.greenhouse.io/embed/job_board/js?for=nexxen"></script>'
+        '<script src="https://jobs.ashbyhq.com/nexxen/embed?version=2"></script>'
+    )
+
+    assert (resolved.source_type, resolved.external_identifier) == (
+        CareerSourceType.ASHBY,
+        "nexxen",
+    )
+
+
+@respx.mock
+def test_probe_detects_a_board_api_called_from_the_page_and_lever_eu() -> None:
+    """VIA's page fetches boards-api.greenhouse.io itself; Mobileye links
+    its postings on Lever's EU region, which has its own API host."""
+    _board_api("https://boards-api.greenhouse.io/v1/boards/via/jobs")
+    via = _probe(
+        "const fetchURL = { jobs: "
+        '"https://boards-api.greenhouse.io/v1/boards/via/jobs?content=true" }'
+    )
+    assert (via.source_type, via.external_identifier) == (CareerSourceType.GREENHOUSE, "via")
+
+    respx.get("https://api.eu.lever.co/v0/postings/mobileye", params={"mode": "json"}).mock(
+        return_value=httpx.Response(200, json=[{"id": "x"}])
+    )
+    mobileye = _probe('<a href="https://jobs.eu.lever.co/mobileye/bb661a53-79b8/apply">Apply</a>')
+    assert (mobileye.source_type, mobileye.external_identifier) == (
+        CareerSourceType.LEVER,
+        "mobileye",
+    )
+    assert mobileye.board_url == "https://jobs.eu.lever.co/mobileye"
+
+
+@respx.mock
+def test_probe_reads_the_comeet_uid_from_the_pages_own_script() -> None:
+    """Plus500: the page loads the Comeet JS API, the company uid sits only
+    in its general.js, and the public board is verified as for the plugin."""
+    respx.get("https://company.example.com/js/general.js").mock(
+        return_value=httpx.Response(
+            200,
+            text='url: "https://www.comeet.co/careers-api/2.0/company/A1.00F/positions?token=" + t',
+        )
+    )
+    respx.get("https://www.comeet.com/jobs/example/A1.00F").mock(
+        return_value=httpx.Response(
+            200, text='var COMPANY_DATA = {"company_uid": "A1.00F", "token": "abc"};'
+        )
+    )
+
+    resolved = _probe(
+        '<script src="//www.comeet.co/careers-api/api.js"></script>'
+        '<script src="/js/general.js"></script>'
+    )
+
+    assert resolved.source_type == CareerSourceType.COMEET
+    assert resolved.external_identifier == "A1.00F"
+    assert resolved.board_url == "https://www.comeet.com/jobs/example/A1.00F"
+
+
+@respx.mock
 def test_probe_prefers_embedded_board_over_jsonld() -> None:
+    _board_api("https://api.ashbyhq.com/posting-api/job-board/crusoe")
     resolved = _probe(
         '<script type="application/ld+json">{"@type": "JobPosting"}</script>'
         '<script src="https://jobs.ashbyhq.com/crusoe/embed"></script>'
