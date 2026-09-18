@@ -107,6 +107,12 @@ class Settings(BaseSettings):
     # sources are plain career sites fetched page by page, 85% of all
     # crawl time, one of them 23 minutes for 259 pages.
     crawl_fetch_concurrency: int = 4
+    # A stored job's page is not downloaded again while it is younger than
+    # this, unless the listing itself reports a newer "updated" timestamp
+    # (the ATS APIs do; plain career sites don't). New links are always
+    # fetched at once - this only bounds how long an edit to an existing
+    # posting's text can go unnoticed.
+    job_details_refresh_hours: int = 24
 
     # --- Ingestion ---
     # Country to ask a source for server-side, where its API supports a

@@ -104,6 +104,10 @@ class JobPosting(Base, TimestampMixin):
     last_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # When the job's own page was last downloaded. A listed job whose page
+    # is younger than JOB_DETAILS_REFRESH_HOURS is not fetched again (see
+    # ingestion._is_definitely_unchanged).
+    details_fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     status: Mapped[JobStatus] = mapped_column(
         Enum(JobStatus, name="job_status"), nullable=False, default=JobStatus.ACTIVE, index=True

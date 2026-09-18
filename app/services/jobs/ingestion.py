@@ -318,6 +318,7 @@ def _create_job(db: Session, source: CareerSource, fetched: _FetchedJob) -> JobP
         apply_url=details.apply_url,
         source_published_at=details.source_published_at,
         source_updated_at=details.source_updated_at,
+        details_fetched_at=utc_now(),
         status=JobStatus.ACTIVE,
         content_hash=fetched.content_hash,
         embedding=fetched.embedding,
@@ -328,13 +329,23 @@ def _create_job(db: Session, source: CareerSource, fetched: _FetchedJob) -> JobP
 
 
 def _is_definitely_unchanged(existing: JobPosting, stub: JobStub) -> bool:
-    """True only when the cheap list call already proves nothing changed -
-    saves a fetch_job call + re-embed for the common case of a job sitting
-    unchanged across many consecutive 5-minute polls.
+    """True when the job's page need not be downloaded this crawl.
+
+    A listing that carries the ATS's own "updated" timestamp proves it.
+    Plain career sites (and some ATS list calls) carry none - there a
+    stored job counts as unchanged until its page is older than
+    JOB_DETAILS_REFRESH_HOURS, so a crawl costs one listing download plus
+    the pages of links that are new. Before this, every crawl of a plain
+    site re-downloaded every page it had already stored. A closed job
+    listed again is re-read before it reopens: it may have been closed
+    because its page turned out not to be a posting at all.
     """
-    if stub.source_updated_at is None or existing.source_updated_at is None:
+    if stub.source_updated_at is not None and existing.source_updated_at is not None:
+        return stub.source_updated_at <= existing.source_updated_at
+    if existing.status == JobStatus.CLOSED or existing.details_fetched_at is None:
         return False
-    return stub.source_updated_at <= existing.source_updated_at
+    refresh_after = timedelta(hours=get_settings().job_details_refresh_hours)
+    return utc_now() - existing.details_fetched_at < refresh_after
 
 
 def _apply_update(existing: JobPosting, fetched: _FetchedJob) -> bool:
@@ -365,6 +376,7 @@ def _apply_update(existing: JobPosting, fetched: _FetchedJob) -> bool:
     existing.apply_url = details.apply_url
     existing.source_published_at = details.source_published_at
     existing.source_updated_at = details.source_updated_at
+    existing.details_fetched_at = utc_now()
 
     if fetched.embedding is None:
         return False

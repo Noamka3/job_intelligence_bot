@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import Select, select, update
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -39,13 +39,15 @@ class _FakeAdapter:
         return self.details_by_id[stub.external_job_id]
 
 
-def _make_source(db: Session) -> CareerSource:
+def _make_source(
+    db: Session, source_type: CareerSourceType = CareerSourceType.GREENHOUSE
+) -> CareerSource:
     company = Company(name="Acme", normalized_name="acme")
     db.add(company)
     db.flush()
     source = CareerSource(
         company_id=company.id,
-        source_type=CareerSourceType.GREENHOUSE,
+        source_type=source_type,
         source_url="https://job-boards.greenhouse.io/acme",
         external_identifier="acme",
         poll_interval_minutes=5,
@@ -53,6 +55,22 @@ def _make_source(db: Session) -> CareerSource:
     db.add(source)
     db.flush()
     return source
+
+
+def _jobs_of(source: CareerSource) -> Select[tuple[JobPosting]]:
+    return select(JobPosting).where(JobPosting.career_source_id == source.id)
+
+
+def _age_stored_pages(db: Session, source: CareerSource) -> None:
+    """Make the source's stored job pages older than the refresh window, so
+    the next crawl downloads them again instead of trusting the listing."""
+    hours = get_settings().job_details_refresh_hours + 1
+    db.execute(
+        update(JobPosting)
+        .where(JobPosting.career_source_id == source.id)
+        .values(details_fetched_at=utc_now() - timedelta(hours=hours))
+    )
+    db.commit()
 
 
 def _details(
@@ -135,6 +153,7 @@ def test_crawl_source_updates_changed_job_and_reembeds(
     ingestion.crawl_source(db_session, source, fake_embedding_provider)
     calls_after_first = len(fake_embedding_provider.calls)
 
+    _age_stored_pages(db_session, source)
     adapter.details_by_id["1"] = _details("1", title="Junior Engineer II")
     run2 = ingestion.crawl_source(db_session, source, fake_embedding_provider)
 
@@ -144,6 +163,81 @@ def test_crawl_source_updates_changed_job_and_reembeds(
         select(JobPosting).where(JobPosting.career_source_id == source.id)
     ).scalar_one()
     assert job.title == "Junior Engineer II"
+    assert job.details_fetched_at is not None
+    assert utc_now() - job.details_fetched_at < timedelta(minutes=1)
+
+
+def test_plain_site_crawl_fetches_only_new_links(
+    db_session: Session,
+    fake_embedding_provider: FakeEmbeddingProvider,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A plain career site reports no timestamps. A job already stored is
+    trusted for JOB_DETAILS_REFRESH_HOURS, so a crawl costs the listing
+    plus the pages of links it hasn't seen - what lets 164 such sites be
+    polled every 10 minutes."""
+    source = _make_source(db_session, CareerSourceType.GENERIC_HTML)
+    stubs = [JobStub(external_job_id="1", title="Job 1", source_url=source.source_url)]
+    adapter = _FakeAdapter(stubs, {"1": _details("1"), "2": _details("2")})
+    monkeypatch.setattr(ingestion, "get_adapter", lambda _: adapter)
+    ingestion.crawl_source(db_session, source, fake_embedding_provider)
+
+    stubs.append(JobStub(external_job_id="2", title="Job 2", source_url=source.source_url))
+    run = ingestion.crawl_source(db_session, source, fake_embedding_provider)
+
+    assert adapter.fetch_calls == ["1", "2"]
+    assert run.jobs_created == 1
+    assert run.jobs_updated == 0
+    known = db_session.execute(
+        _jobs_of(source).where(JobPosting.external_job_id == "1")
+    ).scalar_one()
+    assert known.status == JobStatus.ACTIVE
+    assert known.missing_streak == 0
+
+
+def test_stored_page_is_read_again_once_it_is_a_day_old(
+    db_session: Session,
+    fake_embedding_provider: FakeEmbeddingProvider,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _make_source(db_session, CareerSourceType.GENERIC_HTML)
+    stub = JobStub(external_job_id="1", title="Job", source_url=source.source_url)
+    adapter = _FakeAdapter([stub], {"1": _details("1")})
+    monkeypatch.setattr(ingestion, "get_adapter", lambda _: adapter)
+    ingestion.crawl_source(db_session, source, fake_embedding_provider)
+    ingestion.crawl_source(db_session, source, fake_embedding_provider)
+    assert adapter.fetch_calls == ["1"]
+
+    _age_stored_pages(db_session, source)
+    ingestion.crawl_source(db_session, source, fake_embedding_provider)
+
+    assert adapter.fetch_calls == ["1", "1"]
+
+
+def test_closed_job_listed_again_is_read_before_it_reopens(
+    db_session: Session,
+    fake_embedding_provider: FakeEmbeddingProvider,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Closed because its page turned out to be a category page, say -
+    trusting the fresh timestamp would silently reopen it every crawl."""
+    source = _make_source(db_session, CareerSourceType.GENERIC_HTML)
+    stub = JobStub(external_job_id="1", title="Job", source_url=source.source_url)
+    adapter = _FakeAdapter([stub], {"1": _details("1")})
+    monkeypatch.setattr(ingestion, "get_adapter", lambda _: adapter)
+    ingestion.crawl_source(db_session, source, fake_embedding_provider)
+    db_session.execute(
+        update(JobPosting)
+        .where(JobPosting.career_source_id == source.id)
+        .values(status=JobStatus.CLOSED)
+    )
+    db_session.commit()
+
+    ingestion.crawl_source(db_session, source, fake_embedding_provider)
+
+    assert adapter.fetch_calls == ["1", "1"]
+    job = db_session.execute(_jobs_of(source)).scalar_one()
+    assert job.status == JobStatus.ACTIVE
 
 
 def test_crawl_source_closes_job_after_missing_threshold(
@@ -277,6 +371,7 @@ def test_failed_refresh_leaves_the_existing_job_untouched(
         lambda _: _FakeAdapter([stub], {"1": _details("1", title="Old Title")}),
     )
     ingestion.crawl_source(db_session, source, fake_embedding_provider)
+    _age_stored_pages(db_session, source)
 
     changed_stub = JobStub(external_job_id="1", title="New Title", source_url=source.source_url)
     monkeypatch.setattr(
@@ -320,6 +415,7 @@ def test_unavailable_job_is_closed_if_stored_and_skipped_if_new_without_failing_
         lambda _: _FakeAdapter(stubs, {"real": _details("real"), "category": _details("category")}),
     )
     ingestion.crawl_source(db_session, source, fake_embedding_provider)
+    _age_stored_pages(db_session, source)
 
     # Next crawl: the source now says "category" is not a job page.
     later = _UnavailableFetchAdapter(stubs, {"real": _details("real")})

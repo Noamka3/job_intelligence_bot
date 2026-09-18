@@ -226,17 +226,19 @@ consumes only the `scheduler` queue, so the dispatcher runs the moment it
 fires instead of waiting behind the crawls queued before it (after a
 pause, hundreds). Each tick tops the crawl queue up to
 `CRAWL_QUEUE_TARGET` (60) waiting crawls and leaves the rest due, API-
-backed sources first and longest overdue first within a class: measured
-over two days, the 44 API sources (Greenhouse, Comeet, Ashby, Workable,
-Workday, Taleo) take 1-6 seconds each, while the 164 plain career
-sites, fetched page by page, took 85% of the crawl time and a full cycle
-ran to two and a half hours. Within one site the job pages are now
-fetched `CRAWL_FETCH_CONCURRENCY` (4) at a time - the slowest site went
-from 23 minutes to 6 - so API sources poll every ~5 minutes (interval
-3, i.e. every dispatcher tick), Workday/Taleo every 10, plain sites
-every 30, with two worker processes busy about half the time. The
-status page shows the queue depth and the countdown to the next tick.
-All of this stops when the laptop sleeps.
+backed sources first and longest overdue first within a class. A crawl
+downloads a job's page only when its link is new, when the listing
+reports a newer "updated" timestamp (the ATS APIs do), or when the
+stored copy is older than `JOB_DETAILS_REFRESH_HOURS` (24) - so a plain
+career site, which used to re-download every page it had already
+stored on every crawl (85% of all crawl time, a full cycle of two and a
+half hours), now costs one listing fetch plus the pages of new links.
+Pages that do need fetching are read `CRAWL_FETCH_CONCURRENCY` (4) at a
+time. Intervals: API sources every ~5 minutes (interval 3, i.e. every
+dispatcher tick), Workday/Taleo and plain sites every 10, with two
+worker processes well below capacity. The status page shows the queue
+depth and the countdown to the next tick. All of this stops when the
+laptop sleeps.
 
 If you're on a machine with a TLS-inspecting antivirus (see the pip/SSL
 troubleshooting entries below), building `worker`/`beat` needs the same
