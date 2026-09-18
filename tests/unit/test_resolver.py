@@ -387,7 +387,7 @@ def test_probe_finds_a_wordpress_job_post_type() -> None:
         )
     )
     respx.get("https://company.example.com/wp-json/wp/v2/careers", params={"per_page": "1"}).mock(
-        return_value=httpx.Response(200, json=[{"id": 1}])
+        return_value=httpx.Response(200, json=[{"id": 1}], headers={"X-WP-Total": "12"})
     )
     page = '<link href="/wp-content/themes/x/style.css">'
 
@@ -397,6 +397,18 @@ def test_probe_finds_a_wordpress_job_post_type() -> None:
         CareerSourceType.WORDPRESS,
         "careers",
     )
+
+    # A page that itself lists more jobs than the type holds is read as it
+    # is (Logica-it: 251 on the page, 68 in its job_listing type).
+    listing = (
+        page
+        + "<ul>"
+        + "".join(
+            f'<li class="job"><a href="/jobs/{n}">Backend Developer {n}</a></li>' for n in range(20)
+        )
+        + "</ul>"
+    )
+    assert _probe(listing).source_type == CareerSourceType.GENERIC_HTML
 
     # A WordPress site without a job-like type stays generic.
     respx.get(types).mock(

@@ -30,6 +30,7 @@ from urllib.parse import ParseResult, parse_qs, urljoin, urlparse
 
 import httpx
 
+from app.ingestion.adapters.generic_html import extract_job_links
 from app.ingestion.adapters.lever import postings_api_base
 from app.models.enums import CareerSourceType
 
@@ -363,13 +364,22 @@ def _board_answers(board: ResolvedSource) -> bool:
     return isinstance(listing, list)
 
 
-def _get_json(url: str) -> Any:
-    """The JSON at url, or None on any failure (non-200, network, not JSON)."""
+def _get(url: str) -> httpx.Response | None:
+    """The 200 response at url, or None on any failure."""
     try:
         with httpx.Client(follow_redirects=True, timeout=_PROBE_TIMEOUT_SECONDS) as client:
             response = client.get(url, headers={"User-Agent": _PROBE_USER_AGENT})
-        return response.json() if response.status_code == 200 else None
-    except (httpx.HTTPError, httpx.InvalidURL, ValueError):
+    except (httpx.HTTPError, httpx.InvalidURL):
+        return None
+    return response if response.status_code == 200 else None
+
+
+def _get_json(url: str) -> Any:
+    """The JSON at url, or None on any failure (non-200, network, not JSON)."""
+    response = _get(url)
+    try:
+        return response.json() if response is not None else None
+    except ValueError:
         return None
 
 
@@ -499,7 +509,9 @@ def _probe_page(url: str) -> ResolvedSource:
 def _resolve_wordpress(page_url: str, body: str) -> ResolvedSource | None:
     """A WordPress site whose job list is drawn by JS may still keep its
     jobs as posts of a custom type (Comblack, One, OMC, Tap): the REST
-    type index names it, and the type is kept only if it lists."""
+    type index names it. The type is taken only when it lists more jobs
+    than the page itself shows the plain reader - Logica-it's page lists
+    251 jobs from a plugin while its `job_listing` type holds 68 others."""
     if not _WORDPRESS_MARKER_RE.search(body):
         return None
     parsed = urlparse(page_url)
@@ -507,11 +519,16 @@ def _resolve_wordpress(page_url: str, body: str) -> ResolvedSource | None:
     types = _get_json(f"{origin}/wp-json/wp/v2/types")
     if not isinstance(types, dict):
         return None
+    listed_on_page = len(extract_job_links(body, page_url))
     for slug, info in types.items():
         rest_base = str(info.get("rest_base") or slug) if isinstance(info, dict) else slug
         if not _JOB_POST_TYPE_RE.search(f"{slug} {rest_base}"):
             continue
-        if isinstance(_get_json(f"{origin}/wp-json/wp/v2/{rest_base}?per_page=1"), list):
+        response = _get(f"{origin}/wp-json/wp/v2/{rest_base}?per_page=1")
+        if response is None:
+            continue
+        total = int(response.headers.get("x-wp-total") or 0)
+        if total > listed_on_page:
             return ResolvedSource(CareerSourceType.WORDPRESS, rest_base)
     return None
 
