@@ -28,7 +28,7 @@ JSON-LD as originally ranked).
 | `adamtotal.co.il` | 2 | CBC Israel, Harel - server-rendered, handled by generic HTML |
 | LinkedIn (`unsupported`, never scraped) | ~30 | mostly recruiter profile links (`linkedin.com/in/...`), a few `linkedin.com/company/.../jobs/` |
 | Broken/missing URL (`unsupported`) | a few | Meta and NICE have no URL; NVIDIA's row points at Earnix's careers page |
-| Everything else (`generic_html`) | ~130 | custom company career pages: ~60 render job links server-side (generic HTML adapter), ~25 are JS-rendered and ~8 sit behind a WAF (need the browser fallback, not built) |
+| Everything else (`generic_html`) | ~130 | custom company career pages: ~60 render job links server-side (generic HTML adapter), ~25 are JS-rendered and ~8 sit behind a WAF (handed to the browser fallback, see below) |
 
 No Lever or Ashby examples exist in the sheet today, but both adapters are
 still built (spec priority order + future-proofing for companies added
@@ -205,7 +205,7 @@ Still `generic_html` after all that (verified): pages whose list is
 injected by JS with no board reference at all (hibob, Team8, TriEye's
 WordPress plugin page, which carries a token but no company uid), and
 pages behind a WAF that 403s non-browser clients (Nayax, Check Point,
-Fiverr, ...). Those are the browser-fallback's job (not built). Ribbon's
+Fiverr, ...). Those are handed to the browser fallback (below). Ribbon's
 Workday tenant (`vhr-genband`) answers 422 to every CXS request, even a
 browser-like one, so it is in the same bucket despite the hostname.
 
