@@ -15,6 +15,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import timedelta
 
+import httpx
 from sqlalchemy import case, select
 from sqlalchemy.orm import Session
 
@@ -43,12 +44,18 @@ from app.services.jobs.normalization import (
 )
 from app.services.matching.runner import score_job
 from app.services.matching.seniority import SeniorityAssessment, assess_seniority
+from app.services.sheets.company_sync import default_poll_minutes
 
 logger = logging.getLogger(__name__)
 
-# Sources that fetch a page per job (or, later, drive a browser) - the
-# expensive class the dispatcher serves after the API-backed ones.
+# Sources that fetch a page per job, or drive a browser - the expensive
+# class the dispatcher serves after the API-backed ones.
 SLOW_SOURCE_TYPES = frozenset({CareerSourceType.GENERIC_HTML, CareerSourceType.PLAYWRIGHT})
+# A plain career page that shows no job links this many successful
+# crawls in a row draws its list with JavaScript (or is truly empty,
+# which the browser confirms just as well): the browser fallback takes
+# it over, on the browser's own interval. A 403 hands it over at once.
+_EMPTY_CRAWLS_BEFORE_BROWSER = 3
 
 
 def get_due_sources(db: Session, limit: int | None = None) -> list[CareerSource]:
@@ -113,6 +120,8 @@ def crawl_source(
             "crawl failed while listing jobs",
             extra={"source_id": source.id, "error_type": type(exc).__name__},
         )
+        if source.source_type == CareerSourceType.GENERIC_HTML and _refused_plain_reader(exc):
+            _hand_to_browser(source, "403")
         return _fail_run(db, run, source, type(exc).__name__, str(exc)[:2000])
 
     existing_jobs: dict[str, JobPosting] = {
@@ -220,6 +229,13 @@ def crawl_source(
 
     closed = _close_missing_jobs(existing_jobs, seen_external_ids) + unavailable_closed
 
+    if (
+        source.source_type == CareerSourceType.GENERIC_HTML
+        and not stubs
+        and _plain_reader_kept_finding_nothing(db, source)
+    ):
+        _hand_to_browser(source, "empty")
+
     source.last_successful_check_at = utc_now()
     source.consecutive_failures = 0
     source.last_http_status = 200
@@ -245,6 +261,39 @@ def _first_of_each_id(stubs: list[JobStub]) -> list[JobStub]:
     for stub in stubs:
         unique.setdefault(stub.external_job_id, stub)
     return list(unique.values())
+
+
+def _refused_plain_reader(exc: BaseException) -> bool:
+    return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 403
+
+
+def _plain_reader_kept_finding_nothing(db: Session, source: CareerSource) -> bool:
+    """The successful crawls before this one, as many as the rule needs,
+    all saw no jobs."""
+    earlier = _EMPTY_CRAWLS_BEFORE_BROWSER - 1
+    seen = (
+        db.execute(
+            select(CrawlRun.jobs_seen)
+            .where(
+                CrawlRun.career_source_id == source.id,
+                CrawlRun.status == CrawlRunStatus.SUCCESS,
+            )
+            .order_by(CrawlRun.started_at.desc())
+            .limit(earlier)
+        )
+        .scalars()
+        .all()
+    )
+    return len(seen) == earlier and not any(seen)
+
+
+def _hand_to_browser(source: CareerSource, reason: str) -> None:
+    source.source_type = CareerSourceType.PLAYWRIGHT
+    source.poll_interval_minutes = default_poll_minutes(CareerSourceType.PLAYWRIGHT)
+    source.consecutive_failures = 0
+    logger.info(
+        "source handed to the browser fallback", extra={"source_id": source.id, "reason": reason}
+    )
 
 
 def _mark_seen(job: JobPosting) -> None:

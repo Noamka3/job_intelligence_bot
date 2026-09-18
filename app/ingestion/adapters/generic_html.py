@@ -86,17 +86,7 @@ _STRIP_TAGS = ("script", "style", "nav", "header", "footer", "aside", "noscript"
 class GenericHtmlAdapter:
     def list_jobs(self, source: CareerSource) -> list[JobStub]:
         final_url, html = get_page(source.source_url, browser_like=True)
-        links = extract_job_links(html, final_url)
-        return [
-            JobStub(
-                external_job_id=job_id_for_url(url),
-                title=title,
-                source_url=url,
-                apply_url=url,
-                source_updated_at=None,
-            )
-            for url, title in links[:_MAX_JOBS_PER_LISTING]
-        ]
+        return stubs_from_links(extract_job_links(html, final_url))
 
     def fetch_job(self, source: CareerSource, stub: JobStub) -> JobDetails:
         try:
@@ -105,15 +95,35 @@ class GenericHtmlAdapter:
             if exc.response.status_code in (404, 410):
                 raise JobUnavailableError(stub.source_url, "job page is gone") from exc
             raise
-        postings = _extract_job_postings(html)
-        if postings:
-            return _details_from_jsonld(postings[0], stub)
-        if _is_listing_page(html, final_url):
-            # A listing links to what turns out to be another listing
-            # (a recruiting agency's category page, "Explore open jobs
-            # at ..."), not a posting - seen on real sheet pages.
-            raise JobUnavailableError(stub.source_url, "page is a job listing, not a job")
-        return _details_from_page(html, stub)
+        return details_from_html(html, final_url, stub)
+
+
+def stubs_from_links(links: list[tuple[str, str]]) -> list[JobStub]:
+    return [
+        JobStub(
+            external_job_id=job_id_for_url(url),
+            title=title,
+            source_url=url,
+            apply_url=url,
+            source_updated_at=None,
+        )
+        for url, title in links[:_MAX_JOBS_PER_LISTING]
+    ]
+
+
+def details_from_html(html: str, final_url: str, stub: JobStub) -> JobDetails:
+    """A job page's content: its JSON-LD JobPosting when it has one, else
+    its headline and main text. Shared with the browser fallback, which
+    reads the same pages after rendering them."""
+    postings = _extract_job_postings(html)
+    if postings:
+        return _details_from_jsonld(postings[0], stub)
+    if _is_listing_page(html, final_url):
+        # A listing links to what turns out to be another listing
+        # (a recruiting agency's category page, "Explore open jobs
+        # at ..."), not a posting - seen on real sheet pages.
+        raise JobUnavailableError(stub.source_url, "page is a job listing, not a job")
+    return _details_from_page(html, stub)
 
 
 def extract_job_links(html: str, page_url: str) -> list[tuple[str, str]]:

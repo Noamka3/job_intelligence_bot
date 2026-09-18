@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import httpx
 import pytest
 from sqlalchemy import Select, select, update
 from sqlalchemy.orm import Session
@@ -14,6 +15,7 @@ from app.models.company import Company
 from app.models.enums import CareerSourceType, CrawlRunStatus, JobStatus
 from app.models.job_posting import JobPosting
 from app.services.jobs import ingestion
+from app.services.sheets.company_sync import DEFAULT_POLL_MINUTES
 from tests.conftest import FakeEmbeddingProvider
 
 
@@ -458,6 +460,42 @@ def test_unavailable_job_is_closed_if_stored_and_skipped_if_new_without_failing_
     assert source.consecutive_failures == 0
 
 
+def test_a_plain_page_that_stays_empty_is_handed_to_the_browser(
+    db_session: Session,
+    fake_embedding_provider: FakeEmbeddingProvider,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A page whose job list is drawn by JavaScript looks empty to the
+    plain reader forever; after three such crawls the browser takes it."""
+    source = _make_source(db_session, CareerSourceType.GENERIC_HTML)
+    monkeypatch.setattr(ingestion, "get_adapter", lambda _: _FakeAdapter([]))
+
+    for _ in range(ingestion._EMPTY_CRAWLS_BEFORE_BROWSER - 1):
+        ingestion.crawl_source(db_session, source, fake_embedding_provider)
+        assert source.source_type == CareerSourceType.GENERIC_HTML
+    ingestion.crawl_source(db_session, source, fake_embedding_provider)
+
+    assert source.source_type == CareerSourceType.PLAYWRIGHT
+    assert source.poll_interval_minutes == DEFAULT_POLL_MINUTES[CareerSourceType.PLAYWRIGHT]
+
+
+def test_a_plain_page_that_refuses_with_403_is_handed_to_the_browser(
+    db_session: Session,
+    fake_embedding_provider: FakeEmbeddingProvider,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _make_source(db_session, CareerSourceType.GENERIC_HTML)
+    refused = httpx.HTTPStatusError(
+        "403", request=httpx.Request("GET", source.source_url), response=httpx.Response(403)
+    )
+    monkeypatch.setattr(ingestion, "get_adapter", lambda _: _FakeAdapter([], raise_on_list=refused))
+
+    run = ingestion.crawl_source(db_session, source, fake_embedding_provider)
+
+    assert run.status == CrawlRunStatus.FAILED
+    assert source.source_type == CareerSourceType.PLAYWRIGHT
+
+
 def test_get_due_sources_skips_types_without_an_adapter_and_disabled_companies(
     db_session: Session,
 ) -> None:
@@ -468,7 +506,7 @@ def test_get_due_sources_skips_types_without_an_adapter_and_disabled_companies(
 
     no_adapter_yet = CareerSource(
         company_id=company.id,
-        source_type=CareerSourceType.PLAYWRIGHT,  # the one type still without an adapter
+        source_type=CareerSourceType.UNSUPPORTED,  # the one type no adapter serves
         source_url="https://a",
         enabled=True,
     )

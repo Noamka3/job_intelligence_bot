@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.ingestion.adapters.ashby import AshbyAdapter
 from app.ingestion.adapters.base import JobSourceAdapter
+from app.ingestion.adapters.browser import BrowserAdapter
 from app.ingestion.adapters.comeet import ComeetAdapter
 from app.ingestion.adapters.generic_html import GenericHtmlAdapter
 from app.ingestion.adapters.greenhouse import GreenhouseAdapter
@@ -15,9 +16,8 @@ from app.ingestion.adapters.workable import WorkableAdapter
 from app.ingestion.adapters.workday import WorkdayAdapter
 from app.models.enums import CareerSourceType
 
-# PLAYWRIGHT is deliberately absent: no browser-based adapter exists yet,
-# and get_due_sources skips source types that aren't registered here
-# (see app/services/jobs/ingestion.py).
+# get_due_sources crawls only the source types registered here (see
+# app/services/jobs/ingestion.py); UNSUPPORTED is never crawled.
 _ADAPTERS: dict[CareerSourceType, JobSourceAdapter] = {
     CareerSourceType.GREENHOUSE: GreenhouseAdapter(),
     CareerSourceType.LEVER: LeverAdapter(),
@@ -31,6 +31,7 @@ _ADAPTERS: dict[CareerSourceType, JobSourceAdapter] = {
     CareerSourceType.SITE_FEED: SiteFeedAdapter(),
     CareerSourceType.WORDPRESS: WordPressAdapter(),
     CareerSourceType.GENERIC_HTML: GenericHtmlAdapter(),
+    CareerSourceType.PLAYWRIGHT: BrowserAdapter(),
 }
 
 

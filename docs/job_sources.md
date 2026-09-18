@@ -249,3 +249,17 @@ finds the type in `/wp-json/wp/v2/types` (source type `wordpress`,
 identifier = REST base) and `adapters/wordpress.py` lists it, reading a
 post's own page when the API returns no text (One). The other 24 keep
 their jobs in a plugin the API does not show and stay `generic_html`.
+
+### Browser fallback (coverage step 3)
+`adapters/browser.py` (source type `playwright`) renders a page in
+headless Chromium - installed in the worker image, `Dockerfile` - and
+then reads it exactly like a plain page (`extract_job_links`,
+`details_from_html`). Nothing is resolved to it up front: the crawler
+hands a `generic_html` source over after the plain reader saw no jobs
+three successful crawls in a row (`_EMPTY_CRAWLS_BEFORE_BROWSER`) or was
+refused with 403, and a sheet sync never downgrades it back. It polls
+hourly, renders one page at a time per worker process with images,
+media and fonts blocked, and fetches a job page plainly first - many
+JS-listed sites still serve the posting itself as HTML. Sites behind
+Akamai/Imperva bot management usually refuse the headless browser too;
+those keep failing at the hourly cadence.

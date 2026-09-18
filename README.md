@@ -39,10 +39,14 @@ also records the exact (undocumented, but live-verified) Workday and
 Taleo request formats, including how Workday's country facet differs per
 tenant. Some JS-rendered sites publish the JSON their own page fetches
 (Elbit, IAI, Amazon - `site_feed`) or expose their jobs through
-WordPress's REST API (`wordpress`); both are read without a browser. Not
-built: a browser (Playwright) fallback for the remaining pages whose job
-list is injected by JS and the ones behind a WAF; those stay
-`generic_html` and simply yield no jobs.
+WordPress's REST API (`wordpress`); both are read without a browser. The
+rest get the browser: a plain page that shows no job links three
+successful crawls in a row, or refuses the plain reader with 403, is
+handed to the Playwright fallback (`app/ingestion/adapters/browser.py`,
+source type `playwright`, polled hourly), which renders the page in
+headless Chromium inside the worker image and then reads it like any
+plain page. Renders run one at a time per worker process, and a job
+page is still fetched plainly first.
 
 Run `python -m app.cli reresolve-sources` after pulling a resolver change
 to re-classify companies already in the database (no sheet read). The matching engine
