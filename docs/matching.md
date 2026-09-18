@@ -97,6 +97,36 @@ quality   = 0.45 seniority + 0.30 skills + 0.12 candidate_sim + 0.08 intent_sim
   should catch "מהנדס/ת BackEnd" or "מפתח/ת Full Stack" needs aliases
   such as מפתח, מפתחת, מתכנת, מתכנתת, מהנדס תוכנה. Without them such
   titles only get the capped semantic backstop.
+
+## Experience requirements, in Hebrew and English
+
+`seniority.py` reads the years a posting asks for from its requirements
+section (heading detection covers "Requirements", "Qualifications",
+"דרישות", "כישורים נדרשים" and the like). Found live: the patterns were
+English-only, so "לפחות 4 שנות ניסיון" read as "no clear seniority
+signal", a neutral 0.5 that let the job through at 61% to a candidate
+with no experience. Now:
+
+- Digits and words in both languages: "5+ years", "at least three
+  years", "3 שנות ניסיון", "לפחות 4 שנים", "ניסיון של 5 שנים", "חמש שנות
+  ניסיון", "ניסיון של שנתיים", "שנה ניסיון".
+- Ranges contribute their lower bound and are removed before the
+  single-number patterns run, so "3-5 years of experience" is 3, not 5
+  (it used to be 5).
+- A Hebrew number-of-years only counts with "ניסיון" nearby: "תואר
+  ראשון, 3 שנות לימוד" is the length of a degree.
+- A posting that says experience isn't needed ("ללא ניסיון", "ניסיון לא
+  חובה", "no prior experience required", "fresh graduates") reads as
+  junior with 0 years - unless an explicit years requirement contradicts
+  it, or the phrase is negated ("לא יתקבלו מועמדים ללא ניסיון").
+
+The read is stored on the posting at ingest (`JobPosting.seniority`,
+`experience_min_years`; `reassess-seniority` backfills) and the API
+derives a **seniority fit** per match relative to the target role's
+`max_expected_years`: `fit` (entry-level title, or stated years within
+the ceiling), `experienced` (senior-level title, or years above it),
+`unknown` (nothing readable). The dashboard shows it as a tag on every
+card and filters on it; the default view hides `experienced`.
 - **Better embeddings underneath**: single-blob descriptions now lead
   with their recognizable requirements section (the same heading
   detection seniority uses), and the local provider embeds long texts in

@@ -1,7 +1,14 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { FeedbackAction, Match } from "../api/types";
-import { DISMISSING_FEEDBACK, SOURCE_LABELS, formatDate, relativeTime } from "../lib/format";
+import {
+  DISMISSING_FEEDBACK,
+  SENIORITY_FIT_LABELS,
+  SOURCE_LABELS,
+  formatDate,
+  relativeTime,
+  seniorityFitDetail,
+} from "../lib/format";
 import { CompanyTag } from "./CompanyTag";
 import { FeedbackButtons } from "./FeedbackButtons";
 import { Pill, ScoreBadge } from "./ui";
@@ -47,6 +54,18 @@ export function MatchCard({
           </Link>
         </h2>
         <div className="match__meta">
+          <Pill
+            tone={
+              match.seniority_fit === "fit"
+                ? "good"
+                : match.seniority_fit === "experienced"
+                  ? "bad"
+                  : "neutral"
+            }
+            title={seniorityFitDetail(match)}
+          >
+            {SENIORITY_FIT_LABELS[match.seniority_fit]}
+          </Pill>
           {match.location_text && <span className="bidi">{match.location_text}</span>}
           {match.location_text && <span className="dot" />}
           <span className="faint">{SOURCE_LABELS[match.source_type]}</span>

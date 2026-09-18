@@ -13,6 +13,7 @@ from app.services.matching.queries import (
     MatchFilters,
     MatchRow,
     MatchSort,
+    SeniorityFilter,
     get_match_for_job,
     list_top_matches,
 )
@@ -49,6 +50,9 @@ def _to_read(row: MatchRow) -> MatchRead:
         source_published_at=job.source_published_at,
         first_seen_at=job.first_seen_at,
         last_feedback=row.last_feedback,
+        seniority_fit=row.seniority_fit,
+        job_seniority=job.seniority,
+        experience_min_years=job.experience_min_years,
     )
 
 
@@ -70,6 +74,11 @@ def top_matches(
     sort: MatchSort = Query("recent", description="recent = newest posting first"),
     hide_dismissed: bool = Query(
         True, description="Hide jobs whose latest feedback was not relevant / too senior / ..."
+    ),
+    seniority: SeniorityFilter = Query(
+        "all",
+        description="fit = only postings that read as entry-level; not_experienced = also "
+        "those that say nothing about experience; all = everything",
     ),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
@@ -94,6 +103,7 @@ def top_matches(
             query_embedding=embedding_provider.embed_one(query_text) if query_text else None,
             region=region,
             hide_dismissed=hide_dismissed,
+            seniority=seniority,
             sort=sort,
             limit=limit,
             offset=offset,

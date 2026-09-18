@@ -252,14 +252,31 @@ def _details_from_jsonld(posting: dict[str, Any], stub: JobStub) -> JobDetails:
     )
 
 
+# A search-results header no single posting carries: "מצאנו עבורך 28
+# משרות" (Nisha Group, GotFriends), "Showing 12 of 40 jobs".
+_RESULTS_COUNT_RE = re.compile(
+    r"מצאנו\s+(?:עבורך|לך|עבורכם)?\s*\d+\s+משרות|נמצאו\s+\d+\s+משרות|\d+\s+משרות\s+נמצאו"
+    r"|showing\s+\d+\s+(?:of\s+\d+\s+)?(?:jobs|results|positions)"
+    r"|\d+\s+(?:jobs|results|positions)\s+found",
+    re.IGNORECASE,
+)
+
+
 def _is_listing_page(html: str, page_url: str) -> bool:
     """A page that itself links to many job pages and offers no way to
     apply is a listing, not a posting. A real posting with a "more jobs"
     sidebar still has its apply button/form (Island, Moveo), so those are
-    kept."""
-    if len(extract_job_links(html, page_url)) < _LISTING_LINK_THRESHOLD:
+    kept - unless the page announces a results count, which only a
+    search/category page does (the agency sites, which also render an
+    apply button on those pages, stored 28 jobs as one "job" this way)."""
+    job_links = len(extract_job_links(html, page_url))
+    if job_links < 2:
         return False
     soup = BeautifulSoup(html, "lxml")
+    if _RESULTS_COUNT_RE.search(soup.get_text(" ", strip=True)):
+        return True
+    if job_links < _LISTING_LINK_THRESHOLD:
+        return False
     if soup.find("form") is not None:
         return False
     for anchor in soup.find_all(["a", "button"]):

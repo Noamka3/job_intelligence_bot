@@ -84,23 +84,90 @@ _WORD_NUMBERS = {
     "nine": 9,
     "ten": 10,
 }
+# Hebrew postings write the number as a word at least as often as a
+# digit: "ניסיון של שנתיים", "שלוש שנות ניסיון". "שנה"/"שנתיים" are the
+# unit and the number in one word, so they get their own patterns.
+_HEBREW_WORD_NUMBERS = {
+    "שלוש": 3,
+    "שלושה": 3,
+    "ארבע": 4,
+    "ארבעה": 4,
+    "חמש": 5,
+    "חמישה": 5,
+    "שש": 6,
+    "שישה": 6,
+    "שבע": 7,
+    "שבעה": 7,
+    "שמונה": 8,
+    "תשע": 9,
+    "תשעה": 9,
+    "עשר": 10,
+    "עשרה": 10,
+}
 _NUMBER = r"(\d+|" + "|".join(_WORD_NUMBERS) + r")"
 _YEARS = r"years?'?"
+# (?<!\w)/(?!\w) rather than \b: "חמש" must not match inside "וחמש", and
+# "3" must not match inside "13".
+_HE_NUMBER = r"(?<!\w)(\d+|" + "|".join(_HEBREW_WORD_NUMBERS) + r")(?!\w)"
+_HE_YEARS = r"שנ(?:ים|ות)"
 
-_YEARS_PATTERNS = [
-    re.compile(rf"{_NUMBER}\s*\+\s*{_YEARS}", re.IGNORECASE),
-    re.compile(rf"{_NUMBER}\s*(?:-|–|to)\s*(?:\d+|[a-z]+)\s*{_YEARS}", re.IGNORECASE),
-    re.compile(
-        rf"(?:minimum|min\.?|at least|over|more than)\s*(?:of\s*)?{_NUMBER}\s*{_YEARS}",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        rf"{_NUMBER}\s*{_YEARS}\s*(?:of\s*)?"
-        r"(?:relevant\s*|hands-on\s*|professional\s*|proven\s*|practical\s*|prior\s*)?"
-        r"(?:experience|exp\b)",
-        re.IGNORECASE,
-    ),
+# (pattern, is_hebrew). Ranges are read first and *removed* from the text
+# before the single-number patterns run: "3-5 years of experience"
+# contributes its lower bound (3), and the "5 years of experience" left
+# in it must not win.
+_RANGE_PATTERNS: list[tuple[re.Pattern[str], bool]] = [
+    (re.compile(rf"{_NUMBER}\s*(?:-|–|to)\s*(?:\d+|[a-z]+)\s*{_YEARS}", re.IGNORECASE), False),
+    (re.compile(rf"{_HE_NUMBER}\s*(?:-|–|עד)\s*\d+\s*{_HE_YEARS}"), True),
 ]
+_SINGLE_PATTERNS: list[tuple[re.Pattern[str], bool]] = [
+    (re.compile(rf"{_NUMBER}\s*\+\s*{_YEARS}", re.IGNORECASE), False),
+    (
+        re.compile(
+            rf"(?:minimum|min\.?|at least|over|more than)\s*(?:of\s*)?{_NUMBER}\s*{_YEARS}",
+            re.IGNORECASE,
+        ),
+        False,
+    ),
+    (
+        re.compile(
+            rf"{_NUMBER}\s*{_YEARS}\s*(?:of\s*)?"
+            r"(?:relevant\s*|hands-on\s*|professional\s*|proven\s*|practical\s*|prior\s*)?"
+            r"(?:experience|exp\b)",
+            re.IGNORECASE,
+        ),
+        False,
+    ),
+    # "3 שנות ניסיון", "לפחות 4 שנים", "3+ שנים", "ניסיון של 5 שנים",
+    # "חמש שנות ניסיון" - all number + unit; the "ניסיון" context check
+    # keeps "תואר של 3 שנים" out.
+    (re.compile(rf"{_HE_NUMBER}\s*\+?\s*{_HE_YEARS}"), True),
+]
+# "ניסיון של שנתיים", "שנתיים ניסיון", "שנה ניסיון לפחות", "ניסיון של שנה".
+_HE_ONE_TWO_PATTERNS = [
+    re.compile(r"ניסיון\s+(?:של\s+)?(?:לפחות\s+)?(שנה|שנתיים)(?!\w)"),
+    re.compile(r"(?<!\w)(שנה|שנתיים)\s+(?:של\s+)?(?:לפחות\s+)?ניסיון"),
+]
+_HE_ONE_TWO = {"שנה": 1, "שנתיים": 2}
+# A Hebrew number-of-years only counts as an experience requirement when
+# "ניסיון" is nearby; English postings say "years" mostly in that sense
+# already, Hebrew ones also give the length of a degree in years.
+_HE_CONTEXT_CHARS = 60
+
+# Postings that say, in so many words, that experience is not required.
+# Read from the requirements section only, and only when no explicit
+# years requirement contradicts it ("no prior Kubernetes experience
+# required" next to "5+ years backend").
+_NO_EXPERIENCE_RE = re.compile(
+    r"ללא\s+ניסיון|לא\s+נדרש\s+ניסיון|אין\s+צורך\s+בניסיון"
+    r"|ניסיון\s+(?:קודם\s+)?(?:לא|אינו)\s+(?:חובה|נדרש|הכרחי)"
+    r"|תחילת\s+דרך|משרה\s+לבוגרים|בוגרי\s+תואר|סטודנטים\s+ובוגרים"
+    r"|no\s+(?:prior\s+|previous\s+)?(?:work\s+)?experience\s+(?:is\s+)?"
+    r"(?:required|needed|necessary)"
+    r"|no\s+prior\s+experience|(?:fresh|recent|new)\s+graduates?|entry[- ]level",
+    re.IGNORECASE,
+)
+# "לא יתקבלו מועמדים ללא ניסיון" says the opposite.
+_NO_EXPERIENCE_NEGATION_RE = re.compile(r"לא\s+יתקבל|not\s+(?:be\s+)?consider", re.IGNORECASE)
 
 # Nobody requires more than this of a candidate; larger numbers are
 # company blurbs ("with over 20 years in the industry, Acme...").
@@ -151,26 +218,57 @@ def _title_signal(title: str) -> tuple[SeniorityLevel, str] | None:
 
 
 def _as_years(token: str) -> int:
-    return int(token) if token.isdigit() else _WORD_NUMBERS[token.lower()]
+    if token.isdigit():
+        return int(token)
+    return _WORD_NUMBERS.get(token.lower()) or _HEBREW_WORD_NUMBERS[token]
+
+
+def _mentions_experience_nearby(scope: str, match: re.Match[str]) -> bool:
+    window = scope[max(0, match.start() - _HE_CONTEXT_CHARS) : match.end() + _HE_CONTEXT_CHARS]
+    return "ניסיון" in window
 
 
 def extract_min_years_required(text: str) -> int | None:
-    """The experience floor a posting states. With several requirements
-    ("5+ years backend, 1-2 years with Kubernetes") that's the largest of
-    the stated minimums, not the smallest - a range contributes its lower
-    bound. Only the requirements section is scanned when the text has a
-    recognizable one.
+    """The experience floor a posting states, in English or Hebrew. With
+    several requirements ("5+ years backend, 1-2 years with Kubernetes")
+    that's the largest of the stated minimums, not the smallest - a range
+    contributes its lower bound. Only the requirements section is scanned
+    when the text has a recognizable one.
     """
     if not text:
         return None
     scope = requirements_section(text)
-    candidates = [
-        years
-        for pattern in _YEARS_PATTERNS
-        for match in pattern.finditer(scope)
-        if (years := _as_years(match.group(1))) <= _MAX_PLAUSIBLE_YEARS
-    ]
+    candidates: list[int] = []
+
+    def collect(pattern: re.Pattern[str], hebrew: bool) -> None:
+        for match in pattern.finditer(scope):
+            if hebrew and not _mentions_experience_nearby(scope, match):
+                continue
+            years = _as_years(match.group(1))
+            if years <= _MAX_PLAUSIBLE_YEARS:
+                candidates.append(years)
+
+    for pattern, hebrew in _RANGE_PATTERNS:
+        collect(pattern, hebrew)
+        scope = pattern.sub(" ", scope)
+    for pattern, hebrew in _SINGLE_PATTERNS:
+        collect(pattern, hebrew)
+    for pattern in _HE_ONE_TWO_PATTERNS:
+        candidates.extend(_HE_ONE_TWO[match.group(1)] for match in pattern.finditer(scope))
     return max(candidates) if candidates else None
+
+
+def says_no_experience_needed(text: str) -> bool:
+    """True when the requirements say experience isn't needed (Hebrew or
+    English) and don't negate it in the same breath."""
+    if not text:
+        return False
+    scope = requirements_section(text)
+    for match in _NO_EXPERIENCE_RE.finditer(scope):
+        before = scope[max(0, match.start() - 40) : match.start()]
+        if not _NO_EXPERIENCE_NEGATION_RE.search(before):
+            return True
+    return False
 
 
 def assess_seniority(title: str, requirements_text: str | None) -> SeniorityAssessment:
@@ -198,6 +296,9 @@ def assess_seniority(title: str, requirements_text: str | None) -> SeniorityAsse
                 SeniorityLevel.JUNIOR, min_years, f"requires {min_years} years (entry-friendly)"
             )
         return SeniorityAssessment(SeniorityLevel.MID, min_years, f"requires {min_years} years")
+
+    if says_no_experience_needed(requirements_text or ""):
+        return SeniorityAssessment(SeniorityLevel.JUNIOR, 0, "posting says no experience is needed")
 
     return SeniorityAssessment(
         SeniorityLevel.UNKNOWN, None, "no clear seniority signal in title or requirements"

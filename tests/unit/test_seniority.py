@@ -134,6 +134,62 @@ def test_score_seniority_rewards_junior_titles() -> None:
     assert score == 1.0
 
 
+def test_hebrew_years_requirements_are_read() -> None:
+    """Live: "לפחות 4 שנות ניסיון" (AI Platform Developer, Shavit) read as
+    "no clear seniority signal" and the job showed at 61% to a candidate
+    with no experience."""
+    assert extract_min_years_required("דרישות\nלפחות 4 שנות ניסיון בפיתוח Backend") == 4
+    assert extract_min_years_required("ניסיון ב-SQL: 3+ שנות ניסיון מעשי") == 3
+    assert extract_min_years_required("ניסיון של 5 שנים בפיתוח") == 5
+    assert extract_min_years_required("חמש שנות ניסיון בתחום") == 5
+    assert extract_min_years_required("ניסיון של שנתיים לפחות") == 2
+    assert extract_min_years_required("שנה ניסיון בפייתון") == 1
+    assert extract_min_years_required("ניסיון של שנה לפחות בפיתוח") == 1
+
+
+def test_hebrew_ranges_contribute_their_lower_bound() -> None:
+    assert extract_min_years_required("3-5 שנות ניסיון בפיתוח") == 3
+    assert extract_min_years_required("דרישות\n3 עד 5 שנות ניסיון") == 3
+    assert extract_min_years_required("Requirements\n3-5 years of experience in Java") == 3
+
+
+def test_hebrew_years_without_experience_context_do_not_count() -> None:
+    """ "תואר ראשון (3 שנות לימוד)" is the length of a degree, not a
+    requirement of the candidate."""
+    assert extract_min_years_required("דרישות\nתואר ראשון במדעי המחשב, 3 שנות לימוד") is None
+    assert extract_min_years_required("החברה קיימת 20 שנים") is None
+
+
+def test_hebrew_number_words_need_word_boundaries() -> None:
+    assert extract_min_years_required("ניסיון של 13 שנים") == 13
+    assert extract_min_years_required("ניסיון של 3 שנים") == 3
+
+
+def test_posting_that_says_no_experience_needed_reads_as_junior() -> None:
+    for text in (
+        "דרישות\nללא ניסיון קודם, תואר במדעי המחשב",
+        "דרישות\nניסיון לא חובה, נכונות ללמוד",
+        "מה אנחנו מחפשים\nמשרה לבוגרים, אין צורך בניסיון",
+        "Requirements\nNo prior experience required - we will train you",
+        "Requirements\nFresh graduates are welcome",
+    ):
+        assessment = assess_seniority("Backend Developer", text)
+        assert assessment.level == SeniorityLevel.JUNIOR, text
+        assert assessment.min_years_required == 0
+
+
+def test_explicit_years_beat_a_no_experience_phrase() -> None:
+    text = "Requirements\n5+ years of backend experience. No prior Kubernetes experience required."
+    assessment = assess_seniority("Backend Developer", text)
+    assert assessment.level == SeniorityLevel.SENIOR
+    assert assessment.min_years_required == 5
+
+
+def test_negated_no_experience_phrase_is_not_a_junior_signal() -> None:
+    text = "דרישות\nלא יתקבלו מועמדים ללא ניסיון"
+    assert assess_seniority("Backend Developer", text).level == SeniorityLevel.UNKNOWN
+
+
 def test_score_seniority_scales_down_with_years_gap() -> None:
     # 4 years lands in the MID bucket (not a title-level "strongly senior"
     # signal), so this exercises the gradual years-gap falloff rather than

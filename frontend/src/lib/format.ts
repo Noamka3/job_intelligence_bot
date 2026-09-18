@@ -1,4 +1,11 @@
-import type { ApplicationStatus, CrawlRunStatus, FeedbackAction, SourceType } from "../api/types";
+import type {
+  ApplicationStatus,
+  CrawlRunStatus,
+  FeedbackAction,
+  Match,
+  SeniorityFit,
+  SourceType,
+} from "../api/types";
 
 const relative = new Intl.RelativeTimeFormat("he", { numeric: "auto" });
 const dateTime = new Intl.DateTimeFormat("he-IL", { dateStyle: "medium", timeStyle: "short" });
@@ -45,6 +52,27 @@ export const SOURCE_LABELS: Record<SourceType, string> = {
   playwright: "אתר החברה (דפדפן)",
   unsupported: "לא נתמך",
 };
+
+export const SENIORITY_FIT_LABELS: Record<SeniorityFit, string> = {
+  fit: "מתאים לג'וניור",
+  unknown: "ותק לא צוין",
+  experienced: "דורש ניסיון",
+};
+
+/** The tag's one-line explanation: what in the posting decided it. */
+export function seniorityFitDetail(match: Match): string {
+  if (match.seniority_fit === "experienced" && match.experience_min_years !== null) {
+    return `דורש ${match.experience_min_years}+ שנות ניסיון`;
+  }
+  if (match.seniority_fit === "experienced") return `כותרת ברמת ${match.job_seniority}`;
+  if (match.seniority_fit === "fit" && match.experience_min_years !== null) {
+    return match.experience_min_years === 0
+      ? "לא נדרש ניסיון"
+      : `עד ${match.experience_min_years} שנות ניסיון`;
+  }
+  if (match.seniority_fit === "fit") return "כותרת של משרת התחלה";
+  return "המשרה לא מציינת דרישת ניסיון";
+}
 
 export const FEEDBACK_LABELS: Record<FeedbackAction, string> = {
   interested: "מעניין אותי",

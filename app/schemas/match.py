@@ -4,7 +4,8 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from app.models.enums import CareerSourceType, JobFeedbackAction
+from app.models.enums import CareerSourceType, JobFeedbackAction, SeniorityLevel
+from app.services.matching.queries import SeniorityFit
 
 
 class MatchRead(BaseModel):
@@ -37,3 +38,8 @@ class MatchRead(BaseModel):
     source_published_at: datetime | None
     first_seen_at: datetime
     last_feedback: JobFeedbackAction | None
+    # What the posting itself says about experience, relative to the
+    # target role: the dashboard's tag and "fits a junior" filter.
+    seniority_fit: SeniorityFit
+    job_seniority: SeniorityLevel
+    experience_min_years: int | None

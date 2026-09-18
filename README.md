@@ -225,11 +225,16 @@ The `beat` container is a one-thread worker with Beat embedded that
 consumes only the `scheduler` queue, so the dispatcher runs the moment it
 fires instead of waiting behind the crawls queued before it (after a
 pause, hundreds). Each tick tops the crawl queue up to
-`CRAWL_QUEUE_TARGET` (40) waiting crawls and leaves the rest due, longest
-overdue first: ~200 sources on 5-15 minute intervals ask for more crawls
-than two worker processes deliver, and an unbounded queue only ever grew.
-In practice a source is re-crawled every 30-60 minutes; the status page
-shows the queue depth and the countdown to the next tick.
+`CRAWL_QUEUE_TARGET` (40) waiting crawls and leaves the rest due, API-
+backed sources first and longest overdue first within a class: measured
+over two days, the 44 API sources (Greenhouse, Comeet, Ashby, Workable,
+Workday, Taleo) take about a minute together, while the 164 plain career
+sites, fetched page by page, took 85% of the crawl time and a full cycle
+ran to two and a half hours. So API sources poll every 5-10 minutes,
+plain sites every 60, and within one site the job pages are fetched
+`CRAWL_FETCH_CONCURRENCY` (4) at a time - the slowest site went from 23
+minutes to a few. The status page shows the queue depth and the
+countdown to the next tick. All of this stops when the laptop sleeps.
 
 If you're on a machine with a TLS-inspecting antivirus (see the pip/SSL
 troubleshooting entries below), building `worker`/`beat` needs the same
@@ -461,6 +466,8 @@ the intended lever for this, not something the scorer should special-case.
 .venv/Scripts/python.exe -m app.cli import-excel "C:\path\to\companies.xlsx"
 .venv/Scripts/python.exe -m app.cli reresolve-sources
 .venv/Scripts/python.exe -m app.cli reclassify-locations
+.venv/Scripts/python.exe -m app.cli reassess-seniority
+.venv/Scripts/python.exe -m app.cli apply-poll-intervals
 .venv/Scripts/python.exe -m app.cli reembed
 .venv/Scripts/python.exe -m app.cli crawl-now
 .venv/Scripts/python.exe -m app.cli crawl-company "Torq"
@@ -479,9 +486,12 @@ from the URL it was imported with (no sheet read) - run it after a
 resolver change so companies get their newly recognized board/adapter
 in place, never as a duplicate source. `reclassify-locations` recomputes
 country + region for every stored job after the location vocabulary
-changes; `reembed` recomputes every stored embedding (CV, roles, jobs)
-and rescores - after changing the embedding model, chunking, or
-`build_embedding_text`. `crawl-now` crawls every
+changes; `reassess-seniority` re-reads every active job's seniority and
+years requirement (after the parser learns new phrasings) and rescores;
+`apply-poll-intervals` re-applies the per-type poll intervals to existing
+sources after the defaults change; `reembed` recomputes every stored
+embedding (CV, roles, jobs) and rescores - after changing the embedding
+model, chunking, or `build_embedding_text`. `crawl-now` crawls every
 due `CareerSource`; `crawl-company` crawls just one company's sources, by
 name - useful for testing a single adapter without waiting on a full
 sync. `score-all` scores every `ACTIVE` job against the active CV and

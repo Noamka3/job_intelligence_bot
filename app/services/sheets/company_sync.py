@@ -38,10 +38,15 @@ logger = logging.getLogger(__name__)
 
 _PROBE_CONCURRENCY = 10
 
-# Reasonable defaults per spec §19: API-backed sources are cheap to poll
-# often; anything requiring real page fetches (or, later, a browser) backs
-# off. Applied once when a CareerSource is first created.
-_DEFAULT_POLL_MINUTES: dict[CareerSourceType, int] = {
+# Per spec §19: API-backed sources are cheap to poll often; anything
+# requiring real page fetches (or, later, a browser) backs off. Measured
+# over two days of real crawling: the 44 API sources take about a minute
+# for all of them together, the 164 plain career sites (fetched page by
+# page) took 85% of the crawl time - at 15 minutes they only ever grew
+# the queue and everything was late. Applied when a CareerSource is
+# created or changes type; `python -m app.cli apply-poll-intervals`
+# re-applies them to existing sources.
+DEFAULT_POLL_MINUTES: dict[CareerSourceType, int] = {
     CareerSourceType.GREENHOUSE: 5,
     CareerSourceType.LEVER: 5,
     CareerSourceType.ASHBY: 5,
@@ -50,9 +55,9 @@ _DEFAULT_POLL_MINUTES: dict[CareerSourceType, int] = {
     CareerSourceType.COMEET: 5,
     CareerSourceType.WORKDAY: 10,
     CareerSourceType.TALEO: 10,
-    CareerSourceType.JSONLD: 15,
-    CareerSourceType.GENERIC_HTML: 15,
-    CareerSourceType.PLAYWRIGHT: 30,
+    CareerSourceType.JSONLD: 30,
+    CareerSourceType.GENERIC_HTML: 60,
+    CareerSourceType.PLAYWRIGHT: 60,
 }
 
 
@@ -215,7 +220,7 @@ def _ensure_career_source(
             external_identifier=resolved.external_identifier,
             unsupported_reason=resolved.unsupported_reason,
             enabled=resolved.source_type != CareerSourceType.UNSUPPORTED,
-            poll_interval_minutes=_default_poll_minutes(resolved.source_type),
+            poll_interval_minutes=default_poll_minutes(resolved.source_type),
         )
         db.add(existing)
         created = 1
@@ -268,7 +273,7 @@ def _reconcile_existing_source(existing: CareerSource, url: str, resolved: Resol
         existing.source_type = resolved.source_type
         existing.external_identifier = resolved.external_identifier
         existing.unsupported_reason = resolved.unsupported_reason
-        existing.poll_interval_minutes = _default_poll_minutes(resolved.source_type)
+        existing.poll_interval_minutes = default_poll_minutes(resolved.source_type)
         existing.consecutive_failures = 0
         existing.next_check_at = None
     existing.source_url = url
@@ -280,8 +285,8 @@ def _reconcile_existing_source(existing: CareerSource, url: str, resolved: Resol
         existing.next_check_at = None
 
 
-def _default_poll_minutes(source_type: CareerSourceType) -> int:
-    return _DEFAULT_POLL_MINUTES.get(source_type, get_settings().default_poll_minutes)
+def default_poll_minutes(source_type: CareerSourceType) -> int:
+    return DEFAULT_POLL_MINUTES.get(source_type, get_settings().default_poll_minutes)
 
 
 def _retire_source(db: Session, source: CareerSource) -> None:

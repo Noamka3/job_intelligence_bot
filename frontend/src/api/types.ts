@@ -63,7 +63,26 @@ export interface Match {
   source_published_at: string | null;
   first_seen_at: string;
   last_feedback: FeedbackAction | null;
+  // What the posting itself says about experience, relative to the
+  // target role - the card's tag and the "fits a junior" filter.
+  seniority_fit: SeniorityFit;
+  job_seniority: SeniorityLevel;
+  experience_min_years: number | null;
 }
+
+export type SeniorityFit = "fit" | "unknown" | "experienced";
+export type SeniorityFilter = "all" | "fit" | "not_experienced";
+export type SeniorityLevel =
+  | "intern"
+  | "junior"
+  | "mid"
+  | "senior"
+  | "staff"
+  | "principal"
+  | "lead"
+  | "manager"
+  | "director"
+  | "unknown";
 
 export interface Job {
   id: number;
@@ -204,6 +223,7 @@ export interface MatchFilters {
   region: string | null;
   israelOnly: boolean;
   hideDismissed: boolean;
+  seniority: SeniorityFilter;
   query: string;
   sort: MatchSort;
 }

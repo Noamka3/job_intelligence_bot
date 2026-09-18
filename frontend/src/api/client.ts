@@ -52,6 +52,7 @@ export function fetchMatches(filters: MatchFilters, offset: number): Promise<Mat
     min_score: String(filters.minScore),
     israel_only: String(filters.israelOnly),
     hide_dismissed: String(filters.hideDismissed),
+    seniority: filters.seniority,
     sort: filters.sort,
     limit: String(PAGE_SIZE),
     offset: String(offset),

@@ -14,11 +14,44 @@ from sqlalchemy.orm import Session
 from app.core.timezone import utc_now
 from app.models.career_source import CareerSource
 from app.models.company import Company
-from app.models.enums import JobFeedbackAction, JobStatus
+from app.models.enums import JobFeedbackAction, JobStatus, SeniorityLevel
 from app.models.job_feedback import JobFeedback
 from app.models.job_match import JobMatch
 from app.models.job_posting import JobPosting
+from app.models.target_role import TargetRole
 from app.services.jobs.israel_filter import israel_only_clause
+
+# What a posting's stored seniority read (JobPosting.seniority and
+# experience_min_years, set at ingest) means for *this* target role:
+#   fit         - an entry-level title, or stated years within the role's
+#                 max_expected_years
+#   experienced - a senior-level title, or stated years above it
+#   unknown     - the posting says nothing readable about experience
+SeniorityFit = Literal["fit", "unknown", "experienced"]
+SeniorityFilter = Literal["all", "fit", "not_experienced"]
+
+_ENTRY_LEVELS = (SeniorityLevel.JUNIOR, SeniorityLevel.INTERN)
+_SENIOR_LEVELS = (
+    SeniorityLevel.SENIOR,
+    SeniorityLevel.STAFF,
+    SeniorityLevel.PRINCIPAL,
+    SeniorityLevel.LEAD,
+    SeniorityLevel.MANAGER,
+    SeniorityLevel.DIRECTOR,
+)
+_DEFAULT_MAX_EXPECTED_YEARS = 2
+
+
+def seniority_fit_expression() -> Any:
+    """SQL for SeniorityFit; needs JobPosting and TargetRole in the FROM."""
+    ceiling = func.coalesce(TargetRole.max_expected_years, _DEFAULT_MAX_EXPECTED_YEARS)
+    return case(
+        (JobPosting.seniority.in_(_ENTRY_LEVELS), "fit"),
+        (JobPosting.seniority.in_(_SENIOR_LEVELS), "experienced"),
+        (JobPosting.experience_min_years > ceiling, "experienced"),
+        (JobPosting.experience_min_years.is_not(None), "fit"),
+        else_="unknown",
+    )
 
 
 @dataclass(frozen=True)
@@ -28,6 +61,7 @@ class MatchRow:
     company: Company
     source: CareerSource
     last_feedback: JobFeedbackAction | None
+    seniority_fit: SeniorityFit
 
 
 MatchSort = Literal["recent", "score"]
@@ -52,6 +86,9 @@ class MatchFilters:
     # A JobPosting.region key (see app/services/jobs/location.py REGIONS).
     region: str | None = None
     hide_dismissed: bool = True
+    # "fit": only postings that read as entry-level; "not_experienced":
+    # also the ones that say nothing about experience.
+    seniority: SeniorityFilter = "all"
     sort: MatchSort = "recent"
     limit: int = 50
     offset: int = 0
@@ -103,11 +140,13 @@ def list_top_matches(
     else:
         ordering = (posted_at.desc(), JobMatch.final_score.desc())
 
+    fit = seniority_fit_expression()
     query = (
-        select(JobMatch, JobPosting, Company, CareerSource, latest_feedback.c.action)
+        select(JobMatch, JobPosting, Company, CareerSource, latest_feedback.c.action, fit)
         .join(JobPosting, JobMatch.job_id == JobPosting.id)
         .join(Company, JobPosting.company_id == Company.id)
         .join(CareerSource, JobPosting.career_source_id == CareerSource.id)
+        .join(TargetRole, JobMatch.target_role_id == TargetRole.id)
         .outerjoin(latest_feedback, latest_feedback.c.job_id == JobPosting.id)
         .where(
             JobMatch.candidate_profile_id == candidate_profile_id,
@@ -129,6 +168,10 @@ def list_top_matches(
         query = query.where(JobPosting.first_seen_at >= since)
     if filters.region is not None:
         query = query.where(JobPosting.region == filters.region)
+    if filters.seniority == "fit":
+        query = query.where(fit == "fit")
+    elif filters.seniority == "not_experienced":
+        query = query.where(fit != "experienced")
     if filters.query_embedding is not None and text_hit is not None:
         near = JobPosting.embedding.is_not(None) & (
             JobPosting.embedding.cosine_distance(filters.query_embedding) <= SEMANTIC_MAX_DISTANCE
@@ -145,18 +188,33 @@ def list_top_matches(
         )
 
     return [
-        MatchRow(match=match, job=job, company=company, source=source, last_feedback=action)
-        for match, job, company, source, action in db.execute(query).all()
+        MatchRow(
+            match=match,
+            job=job,
+            company=company,
+            source=source,
+            last_feedback=action,
+            seniority_fit=fit_value,
+        )
+        for match, job, company, source, action, fit_value in db.execute(query).all()
     ]
 
 
 def get_match_for_job(db: Session, candidate_profile_id: int, job_id: int) -> MatchRow | None:
     latest_feedback = _latest_feedback_subquery().subquery()
     row = db.execute(
-        select(JobMatch, JobPosting, Company, CareerSource, latest_feedback.c.action)
+        select(
+            JobMatch,
+            JobPosting,
+            Company,
+            CareerSource,
+            latest_feedback.c.action,
+            seniority_fit_expression(),
+        )
         .join(JobPosting, JobMatch.job_id == JobPosting.id)
         .join(Company, JobPosting.company_id == Company.id)
         .join(CareerSource, JobPosting.career_source_id == CareerSource.id)
+        .join(TargetRole, JobMatch.target_role_id == TargetRole.id)
         .outerjoin(latest_feedback, latest_feedback.c.job_id == JobPosting.id)
         .where(JobMatch.candidate_profile_id == candidate_profile_id, JobMatch.job_id == job_id)
         .order_by(JobMatch.final_score.desc())
@@ -164,5 +222,12 @@ def get_match_for_job(db: Session, candidate_profile_id: int, job_id: int) -> Ma
     ).first()
     if row is None:
         return None
-    match, job, company, source, action = row
-    return MatchRow(match=match, job=job, company=company, source=source, last_feedback=action)
+    match, job, company, source, action, fit_value = row
+    return MatchRow(
+        match=match,
+        job=job,
+        company=company,
+        source=source,
+        last_feedback=action,
+        seniority_fit=fit_value,
+    )

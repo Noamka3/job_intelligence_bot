@@ -286,3 +286,35 @@ def test_fetch_job_falls_back_to_the_first_real_line_when_every_heading_is_gener
     )
 
     assert details.title == "איש/אשת טלפוניה, IVR ותקשורת"
+
+
+@respx.mock
+def test_fetch_job_treats_a_search_results_page_as_unavailable() -> None:
+    """Agency sites (Nisha Group, GotFriends) link category pages that say
+    "מצאנו עבורך 28 משרות" and list them all - stored as one "job" with
+    28 postings in its description, and an apply button on the page kept
+    the link-count heuristic from catching it."""
+    links = "".join(
+        f'<li><a href="/jobs/backend-{i}">Backend Developer {i}</a></li>' for i in range(3)
+    )
+    respx.get("https://www.acme.co.il/jobs/backend/").mock(
+        return_value=httpx.Response(
+            200,
+            text=f"""
+            <html><body><h1>דרושים Backend Engineer</h1>
+            <p>מצאנו עבורך 3 משרות Backend Engineer</p><ul>{links}</ul>
+            <a href="/apply">הגש מועמדות</a>
+            </body></html>
+            """,
+        )
+    )
+
+    with pytest.raises(JobUnavailableError):
+        GenericHtmlAdapter().fetch_job(
+            _SOURCE,
+            JobStub(
+                external_job_id="z",
+                title="דרושים Backend Engineer",
+                source_url="https://www.acme.co.il/jobs/backend/",
+            ),
+        )

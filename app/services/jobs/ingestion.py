@@ -11,10 +11,11 @@ callable from the CLI/API and from the Celery tasks in app/tasks/
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import timedelta
 
-from sqlalchemy import select
+from sqlalchemy import case, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -29,7 +30,7 @@ from app.ingestion.registry import get_adapter, supported_source_types
 from app.models.career_source import CareerSource
 from app.models.company import Company
 from app.models.crawl_run import CrawlRun
-from app.models.enums import CrawlRunStatus, JobStatus
+from app.models.enums import CareerSourceType, CrawlRunStatus, JobStatus
 from app.models.job_posting import JobPosting
 from app.services.embeddings.base import EmbeddingProvider
 from app.services.jobs.location import classify_country, classify_region
@@ -41,8 +42,13 @@ from app.services.jobs.normalization import (
     normalize_location,
 )
 from app.services.matching.runner import score_job
+from app.services.matching.seniority import SeniorityAssessment, assess_seniority
 
 logger = logging.getLogger(__name__)
+
+# Sources that fetch a page per job (or, later, drive a browser) - the
+# expensive class the dispatcher serves after the API-backed ones.
+SLOW_SOURCE_TYPES = frozenset({CareerSourceType.GENERIC_HTML, CareerSourceType.PLAYWRIGHT})
 
 
 def get_due_sources(db: Session, limit: int | None = None) -> list[CareerSource]:
@@ -61,6 +67,10 @@ def get_due_sources(db: Session, limit: int | None = None) -> list[CareerSource]
     the first tick after the adapter is registered.
     """
     now = utc_now()
+    # Cheap API sources go first: all 44 of them together take about a
+    # minute, so a new job at an ATS-backed company never waits behind a
+    # 259-page career site. Within a class, longest overdue first.
+    cost_class = case((CareerSource.source_type.in_(SLOW_SOURCE_TYPES), 1), else_=0)
     query = (
         select(CareerSource)
         .join(Company, CareerSource.company_id == Company.id)
@@ -70,7 +80,7 @@ def get_due_sources(db: Session, limit: int | None = None) -> list[CareerSource]
             CareerSource.source_type.in_(supported_source_types()),
             (CareerSource.next_check_at.is_(None)) | (CareerSource.next_check_at <= now),
         )
-        .order_by(CareerSource.next_check_at.asc().nulls_first(), CareerSource.id)
+        .order_by(cost_class, CareerSource.next_check_at.asc().nulls_first(), CareerSource.id)
     )
     if limit is not None:
         query = query.limit(limit)
@@ -116,19 +126,30 @@ def crawl_source(
     seen_external_ids: set[str] = set()
     created = updated = attempted = failed = unavailable_closed = 0
 
+    to_fetch: list[tuple[JobStub, JobPosting | None]] = []
+    for stub in stubs:
+        seen_external_ids.add(stub.external_job_id)
+        existing = existing_jobs.get(stub.external_job_id)
+        if existing is not None and _is_definitely_unchanged(existing, stub):
+            _mark_seen(existing)
+            db.commit()
+            continue
+        to_fetch.append((stub, existing))
+
+    # The page fetches run a few at a time in a thread pool (network-
+    # bound; a plain career site with 259 postings took 23 minutes one
+    # page after another). Everything after the fetch - embedding, ORM
+    # writes, scoring - stays on this thread, in listing order, so the
+    # per-job commit semantics are exactly as before.
+    pool = ThreadPoolExecutor(max_workers=max(1, get_settings().crawl_fetch_concurrency))
     try:
-        for stub in stubs:
-            seen_external_ids.add(stub.external_job_id)
-            existing = existing_jobs.get(stub.external_job_id)
-
-            if existing is not None and _is_definitely_unchanged(existing, stub):
-                _mark_seen(existing)
-                db.commit()
-                continue
-
+        outcomes = pool.map(lambda pair: _fetch_details(adapter, source, pair[0]), to_fetch)
+        for (stub, existing), outcome in zip(to_fetch, outcomes, strict=True):
             attempted += 1
             try:
-                fetched = _fetch_and_embed(adapter, source, stub, existing, embedding_provider)
+                if isinstance(outcome, Exception):
+                    raise outcome
+                fetched = _embed(outcome, existing, embedding_provider)
             except JobUnavailableError as exc:
                 # The source says this isn't an open job page (gone, or a
                 # listing/category page a generic listing linked to) - not
@@ -184,6 +205,8 @@ def crawl_source(
         db.rollback()
         _fail_run(db, run, source, type(exc).__name__, str(exc)[:2000])
         raise
+    finally:
+        pool.shutdown(wait=True, cancel_futures=True)
 
     if attempted and failed == attempted:
         # Every detail fetch failing means the site/adapter is broken, not
@@ -229,19 +252,24 @@ class _FetchedJob:
     embedding: list[float] | None
 
 
-def _fetch_and_embed(
-    adapter: JobSourceAdapter,
-    source: CareerSource,
-    stub: JobStub,
-    existing: JobPosting | None,
-    embedding_provider: EmbeddingProvider,
+def _fetch_details(
+    adapter: JobSourceAdapter, source: CareerSource, stub: JobStub
+) -> JobDetails | Exception:
+    """One job's network work, run on a pool thread. Returns the failure
+    instead of raising so the calling loop handles it in listing order,
+    with the same logging/counting as before."""
+    try:
+        return adapter.fetch_job(source, stub)
+    except Exception as exc:  # noqa: BLE001 - re-raised on the main thread
+        return exc
+
+
+def _embed(
+    details: JobDetails, existing: JobPosting | None, embedding_provider: EmbeddingProvider
 ) -> _FetchedJob:
-    """All of one job's network + model work, done before any ORM
-    mutation - so a fetch that 404s (job pulled between the list call and
-    now) or an embedding failure leaves the existing row exactly as it was
-    instead of half-updated with a stale embedding.
-    """
-    details = adapter.fetch_job(source, stub)
+    """One job's model work, done before any ORM mutation - so an
+    embedding failure leaves the existing row exactly as it was instead of
+    half-updated with a stale embedding."""
     embedding_text = build_embedding_text(details)
     content_hash = content_hash_for(embedding_text)
     if existing is not None and content_hash == existing.content_hash:
@@ -249,9 +277,21 @@ def _fetch_and_embed(
     return _FetchedJob(details, content_hash, embedding_provider.embed_one(embedding_text))
 
 
+def assess_job_seniority(
+    title: str, qualifications: str | None, normalized_description: str | None
+) -> SeniorityAssessment:
+    """The one place the seniority read of a posting is defined - stored
+    on the row at ingest (JobPosting.seniority / experience_min_years, what
+    the dashboard's "fits a junior" tag and filter use) and recomputed by
+    the scorer from the same fields."""
+    return assess_seniority(title, qualifications or normalized_description or "")
+
+
 def _create_job(db: Session, source: CareerSource, fetched: _FetchedJob) -> JobPosting:
     details = fetched.details
     assert fetched.embedding is not None  # a new job never has an existing hash to match
+    normalized_description = build_normalized_description(details)
+    seniority = assess_job_seniority(details.title, details.qualifications, normalized_description)
     job = JobPosting(
         company_id=source.company_id,
         career_source_id=source.id,
@@ -267,9 +307,11 @@ def _create_job(db: Session, source: CareerSource, fetched: _FetchedJob) -> JobP
         remote_type=details.remote_type,
         employment_type=details.employment_type,
         description=details.description,
-        normalized_description=build_normalized_description(details),
+        normalized_description=normalized_description,
         responsibilities=details.responsibilities,
         qualifications=details.qualifications,
+        seniority=seniority.level,
+        experience_min_years=seniority.min_years_required,
         required_skills=details.required_skills,
         preferred_skills=details.preferred_skills,
         source_url=details.source_url,
@@ -312,6 +354,11 @@ def _apply_update(existing: JobPosting, fetched: _FetchedJob) -> bool:
     existing.normalized_description = build_normalized_description(details)
     existing.responsibilities = details.responsibilities
     existing.qualifications = details.qualifications
+    seniority = assess_job_seniority(
+        details.title, details.qualifications, existing.normalized_description
+    )
+    existing.seniority = seniority.level
+    existing.experience_min_years = seniority.min_years_required
     existing.required_skills = details.required_skills
     existing.preferred_skills = details.preferred_skills
     existing.source_url = details.source_url

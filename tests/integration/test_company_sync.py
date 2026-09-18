@@ -245,7 +245,14 @@ def test_source_re_resolving_to_a_better_type_is_updated_in_place(
     assert result.sources_created == 0
     (source,) = _sources_of(db_session, "acme")
     assert source.source_type == CareerSourceType.JSONLD
-    assert source.poll_interval_minutes == 15
+    # The interval follows the new type - whatever the per-type default is.
+    assert (
+        source.poll_interval_minutes == company_sync.DEFAULT_POLL_MINUTES[CareerSourceType.JSONLD]
+    )
+    assert (
+        source.poll_interval_minutes
+        != company_sync.DEFAULT_POLL_MINUTES[CareerSourceType.GENERIC_HTML]
+    )
 
     # ...but a *failed* probe on a later sync must never downgrade it back.
     monkeypatch.setitem(_RESOLUTIONS, url, ResolvedSource(CareerSourceType.GENERIC_HTML, None))

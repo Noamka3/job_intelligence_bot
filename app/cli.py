@@ -109,6 +109,58 @@ def reclassify_locations() -> None:
     typer.echo(f"Reclassified {changed} job(s).")
 
 
+@app.command("reassess-seniority")
+def reassess_seniority() -> None:
+    """Re-read every active job's seniority / years requirement from its
+    stored text (after the parser learns new phrasings - e.g. Hebrew), then
+    rescore, since the seniority component of every match depends on it.
+    """
+    from app.models.enums import JobStatus
+    from app.models.job_posting import JobPosting
+    from app.services.jobs.ingestion import assess_job_seniority
+
+    session_factory = get_session_factory()
+    with session_factory() as db:
+        changed = 0
+        jobs = db.execute(select(JobPosting).where(JobPosting.status == JobStatus.ACTIVE)).scalars()
+        for job in jobs:
+            assessment = assess_job_seniority(
+                job.title, job.qualifications, job.normalized_description
+            )
+            if (job.seniority, job.experience_min_years) != (
+                assessment.level,
+                assessment.min_years_required,
+            ):
+                job.seniority = assessment.level
+                job.experience_min_years = assessment.min_years_required
+                changed += 1
+        db.commit()
+        typer.echo(f"Reassessed seniority: {changed} job(s) changed. Rescoring...")
+        matches = score_all_active_jobs(db)
+    typer.echo(f"Rescored {matches} match(es).")
+
+
+@app.command("apply-poll-intervals")
+def apply_poll_intervals() -> None:
+    """Set every enabled source's poll interval to the default for its
+    type (see company_sync.DEFAULT_POLL_MINUTES) - after the defaults
+    change; the sheet sync only applies them to new or re-typed sources.
+    """
+    from app.models.career_source import CareerSource
+    from app.services.sheets.company_sync import default_poll_minutes
+
+    session_factory = get_session_factory()
+    with session_factory() as db:
+        changed = 0
+        for source in db.execute(select(CareerSource)).scalars():
+            minutes = default_poll_minutes(source.source_type)
+            if source.poll_interval_minutes != minutes:
+                source.poll_interval_minutes = minutes
+                changed += 1
+        db.commit()
+    typer.echo(f"Updated the poll interval of {changed} source(s).")
+
+
 @app.command("rebuild-profile")
 def rebuild_profile() -> None:
     """Re-run structured extraction + embedding for the active CV in place,

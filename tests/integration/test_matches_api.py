@@ -233,3 +233,35 @@ def test_dashboard_stats_and_root_redirect(api_client: TestClient, db_session: S
 def test_top_matches_rejects_out_of_range_params(api_client: TestClient) -> None:
     assert api_client.get("/matches/top", params={"limit": 0}).status_code == 422
     assert api_client.get("/matches/top", params={"min_score": 101}).status_code == 422
+
+
+def test_top_matches_tag_and_filter_by_what_the_posting_says_about_experience(
+    api_client: TestClient, db_session: Session
+) -> None:
+    """Live: postings saying "לפחות 4 שנות ניסיון" reached a candidate with
+    no experience at 61% because nothing read the requirement and nothing
+    let the user filter on it."""
+    from app.models.enums import SeniorityLevel
+
+    open_job, _, abroad_job = _seed(db_session)
+    open_job.seniority = SeniorityLevel.JUNIOR
+    abroad_job.experience_min_years = 5  # "לפחות 5 שנות ניסיון", no title signal
+    db_session.commit()
+
+    everything = api_client.get("/matches/top", params={"israel_only": "false"}).json()
+    fit_by_job = {m["job_id"]: m["seniority_fit"] for m in everything}
+    assert fit_by_job[open_job.id] == "fit"
+    assert fit_by_job[abroad_job.id] == "experienced"
+    assert {m["job_id"]: m["experience_min_years"] for m in everything}[abroad_job.id] == 5
+
+    only_fit = api_client.get(
+        "/matches/top", params={"israel_only": "false", "seniority": "fit"}
+    ).json()
+    assert {m["job_id"] for m in only_fit} == {open_job.id}
+
+    not_experienced = api_client.get(
+        "/matches/top", params={"israel_only": "false", "seniority": "not_experienced"}
+    ).json()
+    assert abroad_job.id not in {m["job_id"] for m in not_experienced}
+
+    assert api_client.get("/matches/top", params={"seniority": "bogus"}).status_code == 422

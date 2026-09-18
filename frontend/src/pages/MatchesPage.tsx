@@ -19,6 +19,9 @@ const DEFAULT_FILTERS: MatchFilters = {
   region: null,
   israelOnly: true,
   hideDismissed: true,
+  // Postings that state a requirement above the target role's ceiling
+  // are hidden by default; ones that say nothing stay, with a grey tag.
+  seniority: "not_experienced",
   query: "",
   sort: "recent",
 };
@@ -111,6 +114,16 @@ export function MatchesPage() {
             { value: 85, label: "85%+" },
           ]}
           onChange={(minScore) => setFilters((f) => ({ ...f, minScore }))}
+        />
+        <Segmented
+          label="ותק"
+          value={filters.seniority}
+          options={[
+            { value: "fit", label: "רק מתאים לג'וניור" },
+            { value: "not_experienced", label: "בלי דורשות ניסיון" },
+            { value: "all", label: "הכל" },
+          ]}
+          onChange={(seniority) => setFilters((f) => ({ ...f, seniority }))}
         />
         <Segmented
           label="נמצאו לאחרונה"
