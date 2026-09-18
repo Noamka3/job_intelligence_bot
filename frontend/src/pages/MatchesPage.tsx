@@ -14,7 +14,9 @@ import { useAsync } from "../hooks/useAsync";
 
 const DEFAULT_FILTERS: MatchFilters = {
   minScore: 60,
-  days: null,
+  // What the bot found in the last three days, newest first - a posting
+  // older than that is still one click away ("כל הזמן"), never deleted.
+  days: 3,
   targetRoleId: null,
   region: null,
   israelOnly: true,
@@ -72,7 +74,9 @@ export function MatchesPage() {
   const subtitle = searching
     ? "התאמות מדויקות לכותרת/חברה קודם, ואחריהן משרות שקרובות במשמעות למה שכתבת."
     : filters.sort === "recent"
-      ? "המשרות החדשות ביותר קודם. מתעדכן אוטומטית כל 5 דקות."
+      ? filters.days === null
+        ? "המשרות החדשות ביותר קודם. מתעדכן אוטומטית כל 5 דקות."
+        : `מה שנמצא ב-${filters.days === 1 ? "24 השעות" : `${filters.days} הימים`} האחרונים, החדשות קודם. מתעדכן אוטומטית כל 5 דקות.`
       : "המשרות שהכי מתאימות לקורות החיים ולתפקידי היעד שלך, קודם.";
 
   return (
@@ -129,10 +133,11 @@ export function MatchesPage() {
           label="נמצאו לאחרונה"
           value={filters.days}
           options={[
-            { value: null, label: "כל הזמן" },
             { value: 1, label: "היום" },
+            { value: 3, label: "3 ימים" },
             { value: 7, label: "השבוע" },
             { value: 30, label: "החודש" },
+            { value: null, label: "כל הזמן" },
           ]}
           onChange={(days) => setFilters((f) => ({ ...f, days }))}
         />
