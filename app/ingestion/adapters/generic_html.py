@@ -89,7 +89,7 @@ class GenericHtmlAdapter:
         links = extract_job_links(html, final_url)
         return [
             JobStub(
-                external_job_id=_job_id(url),
+                external_job_id=job_id_for_url(url),
                 title=title,
                 source_url=url,
                 apply_url=url,
@@ -234,7 +234,11 @@ def _registrable_host(hostname: str) -> str:
     return ".".join(labels[-2:])
 
 
-def _job_id(url: str) -> str:
+def job_id_for_url(url: str) -> str:
+    """The stable id of a job that has nothing but its page URL. Shared
+    with the WordPress adapter, so a site that moves from the generic
+    reader to its REST API keeps its stored jobs instead of re-creating
+    them under new ids."""
     return hashlib.sha256(url.encode("utf-8")).hexdigest()[:32]
 
 

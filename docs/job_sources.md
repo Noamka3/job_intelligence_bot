@@ -226,3 +226,26 @@ All three sheet URLs were checked live: dueto.io and topmatch.co.il
 return 404 (dead links in the sheet), adamtotal serves a 23MB
 server-rendered ASP.NET page that the generic adapter handles. No
 dedicated adapters.
+
+### Site feeds and WordPress REST (coverage step 2)
+A survey of the 94 sources that were crawled without ever yielding a job
+found three JS-rendered sites that publish the JSON their own page
+fetches; `adapters/site_feed.py` reads them (source type `site_feed`,
+keyed by hostname in the resolver):
+
+| Site | Feed | Notes |
+|---|---|---|
+| Elbit | `elbitsystemscareer.com/cron/jobs.json` | 586 positions, HTML-escaped text, area, open/update times; a job opens at `/jobs/?jobId={jobId}` |
+| IAI | `jobs.iai.co.il/wp-content/themes/tyco-wp/assets/json/jobs.json` | 517 positions, terse keys (`tl` title, `dc` text, `ct` Hebrew city, `tp` type); job page `/job/{id}/` |
+| Amazon | `amazon.jobs/en/search.json?country=ISR` | 171 in Israel, full text in the list, 100 per page |
+
+Microsoft's `gcsservices.careers.microsoft.com` API serves a certificate
+that is not valid for its hostname, so it is not read.
+
+Of the 28 WordPress career sites in the sheet, 4 expose their jobs as
+posts of a custom type through the REST API (Comblack `careers` 315, One
+`job` 157, OMC `career` 14, Tap `awsm_job_openings` 5). The resolver
+finds the type in `/wp-json/wp/v2/types` (source type `wordpress`,
+identifier = REST base) and `adapters/wordpress.py` lists it, reading a
+post's own page when the API returns no text (One). The other 24 keep
+their jobs in a plugin the API does not show and stay `generic_html`.

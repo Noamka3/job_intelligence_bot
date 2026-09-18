@@ -59,6 +59,8 @@ DEFAULT_POLL_MINUTES: dict[CareerSourceType, int] = {
     CareerSourceType.COMEET: 3,
     CareerSourceType.WORKDAY: 10,
     CareerSourceType.TALEO: 10,
+    CareerSourceType.SITE_FEED: 3,
+    CareerSourceType.WORDPRESS: 3,
     CareerSourceType.JSONLD: 15,
     CareerSourceType.GENERIC_HTML: 10,
     CareerSourceType.PLAYWRIGHT: 60,

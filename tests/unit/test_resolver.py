@@ -362,6 +362,49 @@ def test_probe_prefers_embedded_board_over_jsonld() -> None:
     assert resolved.source_type == CareerSourceType.ASHBY
 
 
+def test_site_feed_hosts_resolve_without_a_probe() -> None:
+    cases = {
+        "https://elbitsystemscareer.com/": "elbit",
+        "https://jobs.iai.co.il/jobs/": "iai",
+        "https://www.amazon.jobs/en/search?country=ISR": "amazon",
+    }
+    for url, feed in cases.items():
+        resolved = resolve_career_source(url)
+        assert (resolved.source_type, resolved.external_identifier) == (
+            CareerSourceType.SITE_FEED,
+            feed,
+        ), url
+
+
+@respx.mock
+def test_probe_finds_a_wordpress_job_post_type() -> None:
+    """Comblack: the list is drawn by JS, but the jobs are posts of a
+    custom `careers` type the REST API lists."""
+    types = "https://company.example.com/wp-json/wp/v2/types"
+    respx.get(types).mock(
+        return_value=httpx.Response(
+            200, json={"post": {"rest_base": "posts"}, "careers": {"rest_base": "careers"}}
+        )
+    )
+    respx.get("https://company.example.com/wp-json/wp/v2/careers", params={"per_page": "1"}).mock(
+        return_value=httpx.Response(200, json=[{"id": 1}])
+    )
+    page = '<link href="/wp-content/themes/x/style.css">'
+
+    resolved = _probe(page)
+
+    assert (resolved.source_type, resolved.external_identifier) == (
+        CareerSourceType.WORDPRESS,
+        "careers",
+    )
+
+    # A WordPress site without a job-like type stays generic.
+    respx.get(types).mock(
+        return_value=httpx.Response(200, json={"post": {"rest_base": "posts"}, "page": {}})
+    )
+    assert _probe(page).source_type == CareerSourceType.GENERIC_HTML
+
+
 @respx.mock
 def test_probe_detects_jsonld_job_posting() -> None:
     html = """

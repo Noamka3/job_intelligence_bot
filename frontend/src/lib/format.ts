@@ -48,6 +48,8 @@ export const SOURCE_LABELS: Record<SourceType, string> = {
   workday: "Workday",
   taleo: "Taleo",
   jsonld: "אתר החברה",
+  site_feed: "הפיד של החברה",
+  wordpress: "אתר החברה (WordPress)",
   generic_html: "אתר החברה",
   playwright: "אתר החברה (דפדפן)",
   unsupported: "לא נתמך",

@@ -115,6 +115,28 @@ def test_crawl_source_creates_new_jobs(
     assert jobs[0].embedding is not None
 
 
+def test_a_listing_that_names_a_job_twice_stores_it_once(
+    db_session: Session,
+    fake_embedding_provider: FakeEmbeddingProvider,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Elbit's feed lists one position twice; the second insert used to
+    violate the source/external-id uniqueness and fail the whole crawl."""
+    source = _make_source(db_session, CareerSourceType.SITE_FEED)
+    twice = [
+        JobStub(external_job_id="1", title="Engineer", source_url=source.source_url),
+        JobStub(external_job_id="1", title="Engineer", source_url=source.source_url),
+    ]
+    adapter = _FakeAdapter(twice, {"1": _details("1")})
+    monkeypatch.setattr(ingestion, "get_adapter", lambda _: adapter)
+
+    run = ingestion.crawl_source(db_session, source, fake_embedding_provider)
+
+    assert run.status == CrawlRunStatus.SUCCESS
+    assert (run.jobs_seen, run.jobs_created) == (1, 1)
+    assert adapter.fetch_calls == ["1"]
+
+
 def test_crawl_source_skips_unchanged_job_without_refetching(
     db_session: Session,
     fake_embedding_provider: FakeEmbeddingProvider,

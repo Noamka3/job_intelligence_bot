@@ -37,8 +37,11 @@ keeps it only if the ATS's public API answers for it. Every shape is
 verified against the named real page - see `docs/job_sources.md`, which
 also records the exact (undocumented, but live-verified) Workday and
 Taleo request formats, including how Workday's country facet differs per
-tenant. Not built: a browser (Playwright) fallback for the ~25 pages whose
-job list is injected by JS and the ~8 behind a WAF; those stay
+tenant. Some JS-rendered sites publish the JSON their own page fetches
+(Elbit, IAI, Amazon - `site_feed`) or expose their jobs through
+WordPress's REST API (`wordpress`); both are read without a browser. Not
+built: a browser (Playwright) fallback for the remaining pages whose job
+list is injected by JS and the ones behind a WAF; those stay
 `generic_html` and simply yield no jobs.
 
 Run `python -m app.cli reresolve-sources` after pulling a resolver change

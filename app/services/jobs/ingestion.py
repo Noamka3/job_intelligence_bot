@@ -107,7 +107,7 @@ def crawl_source(
         return _fail_run(db, run, source, "NoAdapter", f"No adapter for {source.source_type}")
 
     try:
-        stubs = adapter.list_jobs(source)
+        stubs = _first_of_each_id(adapter.list_jobs(source))
     except Exception as exc:  # noqa: BLE001 - one broken source must never crash the crawler (spec §34)
         logger.warning(
             "crawl failed while listing jobs",
@@ -235,6 +235,16 @@ def crawl_source(
 
     db.commit()
     return run
+
+
+def _first_of_each_id(stubs: list[JobStub]) -> list[JobStub]:
+    """A listing that names the same job twice (Elbit's feed does, for one
+    position) is read once: inserting the second row would violate the
+    (source, external_job_id) uniqueness and fail the whole crawl."""
+    unique: dict[str, JobStub] = {}
+    for stub in stubs:
+        unique.setdefault(stub.external_job_id, stub)
+    return list(unique.values())
 
 
 def _mark_seen(job: JobPosting) -> None:

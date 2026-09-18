@@ -52,10 +52,10 @@ def map_employment_type(value: str | None) -> EmploymentType:
     lowered = value.lower()
     if "intern" in lowered:
         return EmploymentType.INTERNSHIP
-    if "part" in lowered:
+    if "part" in lowered or "חלקית" in lowered:
         return EmploymentType.PART_TIME
     if "contract" in lowered or "temp" in lowered or "freelance" in lowered:
         return EmploymentType.CONTRACT
-    if "full" in lowered:
+    if "full" in lowered or "מלאה" in lowered:
         return EmploymentType.FULL_TIME
     return EmploymentType.UNKNOWN

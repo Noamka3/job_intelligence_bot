@@ -11,6 +11,8 @@ export type SourceType =
   | "workday"
   | "taleo"
   | "jsonld"
+  | "site_feed"
+  | "wordpress"
   | "generic_html"
   | "playwright"
   | "unsupported";

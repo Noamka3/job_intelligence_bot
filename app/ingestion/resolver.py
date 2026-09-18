@@ -12,7 +12,11 @@ the page itself, which is checked - in this order - for:
    what gets crawled (`ResolvedSource.board_url`), with the adapter that
    already exists for it.
 2. schema.org JobPosting JSON-LD on the page (`jsonld`).
-3. Otherwise `generic_html`.
+3. A WordPress job post type listed by the site's REST API (`wordpress`).
+4. Otherwise `generic_html`.
+
+A few company sites publish their own JSON feed instead; those are known
+by hostname (`site_feed`, adapters/site_feed.py).
 """
 
 from __future__ import annotations
@@ -21,6 +25,7 @@ import logging
 import re
 from collections.abc import Iterator
 from dataclasses import dataclass
+from typing import Any
 from urllib.parse import ParseResult, parse_qs, urljoin, urlparse
 
 import httpx
@@ -121,6 +126,16 @@ _SMARTRECRUITERS_RE = re.compile(
     rf"(?:(?:jobs|careers)\.smartrecruiters\.com|api\.smartrecruiters\.com/v1/companies)/({_SLUG})"
     r"(?=[/\"'?\s]|$)"
 )
+# Company sites that publish their own JSON feed (adapters/site_feed.py).
+_SITE_FEED_HOSTS: tuple[tuple[str, str], ...] = (
+    ("elbitsystemscareer.com", "elbit"),
+    ("jobs.iai.co.il", "iai"),
+    ("amazon.jobs", "amazon"),
+)
+# A WordPress site may keep its jobs as posts of a custom type the REST
+# API lists (adapters/wordpress.py); its type index names the type.
+_WORDPRESS_MARKER_RE = re.compile(r"/wp-content/|/wp-json/", re.I)
+_JOB_POST_TYPE_RE = re.compile(r"job|position|career|vacan|opening|drushim|misra", re.I)
 _LOCALE_SEGMENT_RE = re.compile(r"^[a-z]{2}(?:-[A-Za-z]{2,4})?$")
 _NOT_A_BOARD_SLUG = frozenset({"embed", "api", "j", "static", "assets", "css", "js", "widget"})
 _NOT_A_WORKDAY_SITE = frozenset({"wday", "job", "login", "page", "en", "he"})
@@ -172,6 +187,10 @@ def resolve_career_source(url: str | None) -> ResolvedSource:
 
     if _hostname_matches(hostname, "linkedin.com"):
         return ResolvedSource(CareerSourceType.UNSUPPORTED, None, "linkedin_not_scraped")
+
+    for domain, feed in _SITE_FEED_HOSTS:
+        if _hostname_matches(hostname, domain):
+            return ResolvedSource(CareerSourceType.SITE_FEED, feed)
 
     for domain, source_type in _HOSTNAME_PATTERNS:
         if _hostname_matches(hostname, domain):
@@ -339,16 +358,19 @@ def _board_answers(board: ResolvedSource) -> bool:
     api_url = _board_api_url(board)
     if api_url is None:
         return True
+    payload = _get_json(api_url)
+    listing = payload.get("jobs") if isinstance(payload, dict) else payload
+    return isinstance(listing, list)
+
+
+def _get_json(url: str) -> Any:
+    """The JSON at url, or None on any failure (non-200, network, not JSON)."""
     try:
         with httpx.Client(follow_redirects=True, timeout=_PROBE_TIMEOUT_SECONDS) as client:
-            response = client.get(api_url, headers={"User-Agent": _PROBE_USER_AGENT})
-        if response.status_code != 200:
-            return False
-        payload = response.json()
+            response = client.get(url, headers={"User-Agent": _PROBE_USER_AGENT})
+        return response.json() if response.status_code == 200 else None
     except (httpx.HTTPError, httpx.InvalidURL, ValueError):
-        return False
-    listing = payload if isinstance(payload, list) else payload.get("jobs")
-    return isinstance(listing, list)
+        return None
 
 
 def _domain_label(url: str) -> str:
@@ -471,7 +493,27 @@ def _probe_page(url: str) -> ResolvedSource:
         if "JobPosting" in match.group(1):
             return ResolvedSource(CareerSourceType.JSONLD, None)
 
-    return ResolvedSource(CareerSourceType.GENERIC_HTML, None)
+    return _resolve_wordpress(url, body) or ResolvedSource(CareerSourceType.GENERIC_HTML, None)
+
+
+def _resolve_wordpress(page_url: str, body: str) -> ResolvedSource | None:
+    """A WordPress site whose job list is drawn by JS may still keep its
+    jobs as posts of a custom type (Comblack, One, OMC, Tap): the REST
+    type index names it, and the type is kept only if it lists."""
+    if not _WORDPRESS_MARKER_RE.search(body):
+        return None
+    parsed = urlparse(page_url)
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    types = _get_json(f"{origin}/wp-json/wp/v2/types")
+    if not isinstance(types, dict):
+        return None
+    for slug, info in types.items():
+        rest_base = str(info.get("rest_base") or slug) if isinstance(info, dict) else slug
+        if not _JOB_POST_TYPE_RE.search(f"{slug} {rest_base}"):
+            continue
+        if isinstance(_get_json(f"{origin}/wp-json/wp/v2/{rest_base}?per_page=1"), list):
+            return ResolvedSource(CareerSourceType.WORDPRESS, rest_base)
+    return None
 
 
 def _fetch_capped(url: str) -> str:

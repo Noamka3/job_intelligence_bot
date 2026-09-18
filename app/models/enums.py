@@ -19,6 +19,10 @@ class CareerSourceType(enum.StrEnum):
     WORKDAY = "workday"
     TALEO = "taleo"
     JSONLD = "jsonld"
+    # A JSON feed the company's own site publishes (adapters/site_feed.py).
+    SITE_FEED = "site_feed"
+    # Jobs exposed as posts by a WordPress site's REST API (adapters/wordpress.py).
+    WORDPRESS = "wordpress"
     GENERIC_HTML = "generic_html"
     PLAYWRIGHT = "playwright"
     UNSUPPORTED = "unsupported"
