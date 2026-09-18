@@ -225,16 +225,18 @@ The `beat` container is a one-thread worker with Beat embedded that
 consumes only the `scheduler` queue, so the dispatcher runs the moment it
 fires instead of waiting behind the crawls queued before it (after a
 pause, hundreds). Each tick tops the crawl queue up to
-`CRAWL_QUEUE_TARGET` (40) waiting crawls and leaves the rest due, API-
+`CRAWL_QUEUE_TARGET` (60) waiting crawls and leaves the rest due, API-
 backed sources first and longest overdue first within a class: measured
 over two days, the 44 API sources (Greenhouse, Comeet, Ashby, Workable,
-Workday, Taleo) take about a minute together, while the 164 plain career
+Workday, Taleo) take 1-6 seconds each, while the 164 plain career
 sites, fetched page by page, took 85% of the crawl time and a full cycle
-ran to two and a half hours. So API sources poll every 5-10 minutes,
-plain sites every 60, and within one site the job pages are fetched
-`CRAWL_FETCH_CONCURRENCY` (4) at a time - the slowest site went from 23
-minutes to a few. The status page shows the queue depth and the
-countdown to the next tick. All of this stops when the laptop sleeps.
+ran to two and a half hours. Within one site the job pages are now
+fetched `CRAWL_FETCH_CONCURRENCY` (4) at a time - the slowest site went
+from 23 minutes to 6 - so API sources poll every ~5 minutes (interval
+3, i.e. every dispatcher tick), Workday/Taleo every 10, plain sites
+every 30, with two worker processes busy about half the time. The
+status page shows the queue depth and the countdown to the next tick.
+All of this stops when the laptop sleeps.
 
 If you're on a machine with a TLS-inspecting antivirus (see the pip/SSL
 troubleshooting entries below), building `worker`/`beat` needs the same

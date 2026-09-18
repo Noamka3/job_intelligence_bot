@@ -101,7 +101,7 @@ class Settings(BaseSettings):
     # sources on 5-15 minute intervals) exceeds what two worker processes
     # crawl, so without a cap the queue only ever grew, and sources whose
     # lease expired while still waiting were queued a second time.
-    crawl_queue_target: int = 40
+    crawl_queue_target: int = 60
     # Job pages of one source are fetched this many at a time (network-
     # bound; the embedding stays sequential). Measured: 164 of 208
     # sources are plain career sites fetched page by page, 85% of all

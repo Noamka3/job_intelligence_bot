@@ -73,7 +73,10 @@ def test_sync_creates_companies_and_sources(
     assert acme_source.source_type == CareerSourceType.GREENHOUSE
     assert acme_source.external_identifier == "acme"
     assert acme_source.enabled is True
-    assert acme_source.poll_interval_minutes == 5
+    assert (
+        acme_source.poll_interval_minutes
+        == (company_sync.DEFAULT_POLL_MINUTES[CareerSourceType.GREENHOUSE])
+    )
 
     linkedin_company = db_session.execute(
         select(Company).where(Company.normalized_name == "some recruiter co")

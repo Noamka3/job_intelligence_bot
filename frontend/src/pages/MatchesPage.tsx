@@ -135,8 +135,6 @@ export function MatchesPage() {
           options={[
             { value: 1, label: "היום" },
             { value: 3, label: "3 ימים" },
-            { value: 7, label: "השבוע" },
-            { value: 30, label: "החודש" },
             { value: null, label: "כל הזמן" },
           ]}
           onChange={(days) => setFilters((f) => ({ ...f, days }))}

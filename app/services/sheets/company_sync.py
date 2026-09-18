@@ -40,23 +40,25 @@ _PROBE_CONCURRENCY = 10
 
 # Per spec §19: API-backed sources are cheap to poll often; anything
 # requiring real page fetches (or, later, a browser) backs off. Measured
-# over two days of real crawling: the 44 API sources take about a minute
-# for all of them together, the 164 plain career sites (fetched page by
-# page) took 85% of the crawl time - at 15 minutes they only ever grew
-# the queue and everything was late. Applied when a CareerSource is
-# created or changes type; `python -m app.cli apply-poll-intervals`
-# re-applies them to existing sources.
+# on real crawling: the 44 API sources take 1-6 seconds each, the 164
+# plain career sites a median of 3 seconds and up to 6 minutes (pages
+# fetched 4 at a time) - at these values two worker processes are busy
+# about half the time and the queue stays near empty. An interval below
+# the dispatcher's 5-minute tick means "due at the next tick", which is
+# how the API sources get a real ~5 minutes (at 5 they landed on every
+# other tick, i.e. 10). Applied when a CareerSource is created or
+# changes type; `python -m app.cli apply-poll-intervals` re-applies them.
 DEFAULT_POLL_MINUTES: dict[CareerSourceType, int] = {
-    CareerSourceType.GREENHOUSE: 5,
-    CareerSourceType.LEVER: 5,
-    CareerSourceType.ASHBY: 5,
-    CareerSourceType.SMARTRECRUITERS: 5,
-    CareerSourceType.WORKABLE: 5,
-    CareerSourceType.COMEET: 5,
+    CareerSourceType.GREENHOUSE: 3,
+    CareerSourceType.LEVER: 3,
+    CareerSourceType.ASHBY: 3,
+    CareerSourceType.SMARTRECRUITERS: 3,
+    CareerSourceType.WORKABLE: 3,
+    CareerSourceType.COMEET: 3,
     CareerSourceType.WORKDAY: 10,
     CareerSourceType.TALEO: 10,
-    CareerSourceType.JSONLD: 30,
-    CareerSourceType.GENERIC_HTML: 60,
+    CareerSourceType.JSONLD: 15,
+    CareerSourceType.GENERIC_HTML: 30,
     CareerSourceType.PLAYWRIGHT: 60,
 }
 
