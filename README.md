@@ -232,8 +232,9 @@ The `beat` container is a one-thread worker with Beat embedded that
 consumes only the `scheduler` queue, so the dispatcher runs the moment it
 fires instead of waiting behind the crawls queued before it (after a
 pause, hundreds). Each tick tops the crawl queue up to
-`CRAWL_QUEUE_TARGET` (60) waiting crawls and leaves the rest due, API-
-backed sources first and longest overdue first within a class. A crawl
+`CRAWL_QUEUE_TARGET` (250, room for every source) waiting crawls and
+leaves the rest due, API-backed sources first and longest overdue first
+within a class. A crawl
 downloads a job's page only when its link is new, when the listing
 reports a newer "updated" timestamp (the ATS APIs do), or when the
 stored copy is older than `JOB_DETAILS_REFRESH_HOURS` (24) - so a plain

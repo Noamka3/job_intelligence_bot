@@ -97,11 +97,14 @@ class Settings(BaseSettings):
     default_poll_minutes: int = 5
     job_missing_threshold: int = 3
     # The dispatcher tops the crawl queue up to this many waiting crawls
-    # per tick and leaves the rest due for the next one. Demand (~200
-    # sources on 5-15 minute intervals) exceeds what two worker processes
-    # crawl, so without a cap the queue only ever grew, and sources whose
-    # lease expired while still waiting were queued a second time.
-    crawl_queue_target: int = 60
+    # per tick and leaves the rest due for the next one - a guard against
+    # a queue that only grows (a pause, a fresh sheet sync), where sources
+    # whose lease expired while still waiting were queued a second time.
+    # Room for every enabled source (~210): since a plain career site
+    # costs one listing fetch per crawl, two worker processes finish a
+    # tick's crawls well within it. At 60, the ~57 API sources due every
+    # tick came first and left three slots for 140 plain sites.
+    crawl_queue_target: int = 250
     # Job pages of one source are fetched this many at a time (network-
     # bound; the embedding stays sequential). Measured: 164 of 208
     # sources are plain career sites fetched page by page, 85% of all
