@@ -76,7 +76,7 @@ export function MatchesPage() {
     : filters.sort === "recent"
       ? filters.days === null
         ? "המשרות החדשות ביותר קודם. מתעדכן אוטומטית כל 5 דקות."
-        : `מה שנמצא ב-${filters.days === 1 ? "24 השעות" : `${filters.days} הימים`} האחרונים, החדשות קודם. מתעדכן אוטומטית כל 5 דקות.`
+        : `מה שנמצא או פורסם ${filters.days === 0 ? "היום" : `ב-${filters.days} הימים האחרונים`}, החדשות קודם. מתעדכן אוטומטית כל 5 דקות.`
       : "המשרות שהכי מתאימות לקורות החיים ולתפקידי היעד שלך, קודם.";
 
   return (
@@ -133,7 +133,7 @@ export function MatchesPage() {
           label="נמצאו לאחרונה"
           value={filters.days}
           options={[
-            { value: 1, label: "היום" },
+            { value: 0, label: "היום" },
             { value: 3, label: "3 ימים" },
             { value: null, label: "כל הזמן" },
           ]}

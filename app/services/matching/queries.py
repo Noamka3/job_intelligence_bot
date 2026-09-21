@@ -5,12 +5,14 @@ dashboard use, so the two can't drift on what "top matches" means
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import Select, case, func, or_, select
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.timezone import utc_now
 from app.models.career_source import CareerSource
 from app.models.company import Company
@@ -70,6 +72,15 @@ MatchSort = Literal["recent", "score"]
 # the query, for the local multilingual MiniLM model: related postings sit
 # around 0.3-0.6, unrelated ones 0.8+.
 SEMANTIC_MAX_DISTANCE = 0.75
+
+
+def _window_start(days_back: int) -> datetime:
+    """Local midnight `days_back` days ago (0 = today). What people mean
+    by "3 days": a job the card labels "found 3 days ago" is inside it,
+    which a plain 72-hour window missed by a few hours."""
+    local_now = utc_now().astimezone(ZoneInfo(get_settings().default_timezone))
+    midnight = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    return (midnight - timedelta(days=days_back)).astimezone(UTC)
 
 
 @dataclass(frozen=True)
@@ -164,7 +175,7 @@ def list_top_matches(
     if filters.target_role_id is not None:
         query = query.where(JobMatch.target_role_id == filters.target_role_id)
     if filters.discovered_within_days is not None:
-        since: datetime = utc_now() - timedelta(days=filters.discovered_within_days)
+        since = _window_start(filters.discovered_within_days)
         # Recent means the bot found it recently *or* the source says it
         # was (re)published recently - the card shows the publish date when
         # there is one, so a job "published yesterday" must not vanish from

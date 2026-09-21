@@ -62,7 +62,10 @@ def top_matches(
     min_score: float = Query(0.0, ge=0.0, le=100.0),
     israel_only: bool = True,
     days: int | None = Query(
-        None, ge=1, le=365, description="Only jobs discovered in the last N days"
+        None,
+        ge=0,
+        le=365,
+        description="Only jobs found or published since local midnight N days ago (0 = today)",
     ),
     q: str | None = Query(
         None,

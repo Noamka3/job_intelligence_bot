@@ -219,6 +219,31 @@ def test_recent_means_found_recently_or_republished_recently(
     assert open_job.id not in stale
 
 
+def test_the_day_windows_start_at_local_midnight(
+    api_client: TestClient, db_session: Session
+) -> None:
+    """ "3 days" must contain what the card labels "found 3 days ago", so
+    the window starts at midnight (Israel time) N days back rather than
+    exactly N x 24 hours ago; "today" (0) starts at this morning's."""
+    from datetime import timedelta
+
+    from app.core.timezone import utc_now
+
+    open_job, _, _ = _seed(db_session)
+    open_job.first_seen_at = utc_now() - timedelta(days=3, hours=6)
+    db_session.commit()
+
+    def ids(days: int) -> set[int]:
+        return {m["job_id"] for m in api_client.get("/matches/top", params={"days": days}).json()}
+
+    assert open_job.id in ids(3)
+    assert open_job.id not in ids(0)
+
+    open_job.first_seen_at = utc_now() - timedelta(minutes=5)
+    db_session.commit()
+    assert open_job.id in ids(0)
+
+
 def test_top_matches_semantic_search_ranks_by_embedding_distance(
     api_client: TestClient, db_session: Session, fake_embedding_provider: FakeEmbeddingProvider
 ) -> None:
