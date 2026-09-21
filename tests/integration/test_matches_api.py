@@ -194,6 +194,31 @@ def test_top_matches_sorts_newest_first_by_default_and_by_score_on_request(
     assert by_score.index(older_better.id) < by_score.index(open_job.id)
 
 
+def test_recent_means_found_recently_or_republished_recently(
+    api_client: TestClient, db_session: Session
+) -> None:
+    """The card shows the publish date when the source gives one, so a job
+    "published yesterday" must be in the 3-day view even if the bot first
+    saw it long ago - and not once the source's date is old too."""
+    from datetime import timedelta
+
+    from app.core.timezone import utc_now
+
+    open_job, _, _ = _seed(db_session)
+    open_job.first_seen_at = utc_now() - timedelta(days=10)
+    open_job.source_published_at = utc_now() - timedelta(days=1)
+    db_session.commit()
+
+    recent = {m["job_id"] for m in api_client.get("/matches/top", params={"days": 3}).json()}
+    assert open_job.id in recent
+
+    open_job.source_published_at = utc_now() - timedelta(days=30)
+    db_session.commit()
+
+    stale = {m["job_id"] for m in api_client.get("/matches/top", params={"days": 3}).json()}
+    assert open_job.id not in stale
+
+
 def test_top_matches_semantic_search_ranks_by_embedding_distance(
     api_client: TestClient, db_session: Session, fake_embedding_provider: FakeEmbeddingProvider
 ) -> None:

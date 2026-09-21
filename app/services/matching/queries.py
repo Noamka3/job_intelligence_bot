@@ -165,7 +165,13 @@ def list_top_matches(
         query = query.where(JobMatch.target_role_id == filters.target_role_id)
     if filters.discovered_within_days is not None:
         since: datetime = utc_now() - timedelta(days=filters.discovered_within_days)
-        query = query.where(JobPosting.first_seen_at >= since)
+        # Recent means the bot found it recently *or* the source says it
+        # was (re)published recently - the card shows the publish date when
+        # there is one, so a job "published yesterday" must not vanish from
+        # the 3-day view because the bot first saw it a week ago.
+        query = query.where(
+            (JobPosting.first_seen_at >= since) | (JobPosting.source_published_at >= since)
+        )
     if filters.region is not None:
         query = query.where(JobPosting.region == filters.region)
     if filters.seniority == "fit":
