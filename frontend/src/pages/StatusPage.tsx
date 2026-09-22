@@ -98,6 +98,7 @@ export function StatusPage() {
         <StatTile value={s.active_israel_jobs} label="משרות פעילות בישראל" tone="good" />
         <StatTile value={s.active_unknown_location_jobs} label="משרות ללא מיקום ידוע" />
         <StatTile value={s.active_jobs} label="משרות פעילות סה״כ" />
+        <StatTile value={s.jobs_found_today} label="נמצאו היום" tone="accent" />
         <StatTile value={s.jobs_discovered_24h} label="נמצאו ב-24 השעות האחרונות" tone="accent" />
         <StatTile value={s.companies_enabled} label="חברות במעקב" />
         <StatTile value={s.sources_enabled} label="מקורות פעילים" />

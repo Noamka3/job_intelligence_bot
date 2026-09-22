@@ -1,16 +1,22 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   PAGE_SIZE,
   fetchMatches,
   fetchProfiles,
   fetchRegions,
+  fetchStats,
   fetchTargetRoles,
 } from "../api/client";
 import type { Match, MatchFilters } from "../api/types";
 import { MatchCard } from "../components/MatchCard";
 import { EmptyState, Segmented, Skeletons, Toggle } from "../components/ui";
 import { useAsync } from "../hooks/useAsync";
+import { relativeTime } from "../lib/format";
+
+// How often the live line asks what the crawler found today; a change
+// in that number reloads the list at once.
+const LIVE_MS = 30_000;
 
 const DEFAULT_FILTERS: MatchFilters = {
   minScore: 60,
@@ -47,11 +53,27 @@ export function MatchesPage() {
   const regions = useAsync(fetchRegions, []);
   const profiles = useAsync(fetchProfiles, []);
   const first = useAsync(() => fetchMatches(filters, 0), [filters]);
+  const stats = useAsync(fetchStats, []);
 
   useEffect(() => {
     setExtra([]);
     setExhausted(false);
   }, [filters]);
+
+  useEffect(() => {
+    const handle = window.setInterval(stats.reload, LIVE_MS);
+    return () => window.clearInterval(handle);
+  }, [stats.reload]);
+
+  const foundToday = stats.data?.jobs_found_today;
+  const lastFoundToday = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (foundToday === undefined) return;
+    if (lastFoundToday.current !== undefined && lastFoundToday.current !== foundToday) {
+      first.reload();
+    }
+    lastFoundToday.current = foundToday;
+  }, [foundToday, first.reload]);
 
   const matches = useMemo(
     () => [...(first.data ?? []), ...extra].filter((m) => !dismissed.has(m.job_id)),
@@ -75,8 +97,8 @@ export function MatchesPage() {
     ? "התאמות מדויקות לכותרת/חברה קודם, ואחריהן משרות שקרובות במשמעות למה שכתבת."
     : filters.sort === "recent"
       ? filters.days === null
-        ? "המשרות החדשות ביותר קודם. מתעדכן אוטומטית כל 5 דקות."
-        : `מה שנמצא או פורסם ${filters.days === 0 ? "היום" : `ב-${filters.days} הימים האחרונים`}, החדשות קודם. מתעדכן אוטומטית כל 5 דקות.`
+        ? "המשרות החדשות ביותר קודם."
+        : `מה שנמצא או פורסם ${filters.days === 0 ? "היום" : `ב-${filters.days} הימים האחרונים`}, החדשות קודם.`
       : "המשרות שהכי מתאימות לקורות החיים ולתפקידי היעד שלך, קודם.";
 
   return (
@@ -85,6 +107,15 @@ export function MatchesPage() {
         <div>
           <h1 className="page__title">ההתאמות שלך</h1>
           <p className="page__subtitle">{subtitle}</p>
+          {stats.data && (
+            <p className="page__subtitle" aria-live="polite">
+              היום נמצאו {stats.data.jobs_found_today} משרות חדשות, {stats.data.relevant_today} מהן
+              מתאימות לך
+              {stats.data.last_crawl_at &&
+                ` · סריקה אחרונה ${relativeTime(stats.data.last_crawl_at)}`}
+              . הרשימה מתעדכנת לבד ברגע שנמצא משהו חדש.
+            </p>
+          )}
         </div>
       </header>
 

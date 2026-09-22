@@ -52,6 +52,8 @@ class DashboardStatsRead(BaseModel):
     active_unknown_location_jobs: int
     matches: int
     jobs_discovered_24h: int
+    jobs_found_today: int
+    relevant_today: int
     last_crawl_at: datetime | None
     last_dispatch_at: datetime | None
     next_dispatch_at: datetime | None

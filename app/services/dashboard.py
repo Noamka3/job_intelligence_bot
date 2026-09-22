@@ -18,8 +18,16 @@ from app.models.crawl_run import CrawlRun
 from app.models.enums import CareerSourceType, CrawlRunStatus, JobStatus
 from app.models.job_match import JobMatch
 from app.models.job_posting import JobPosting
+from app.services.candidate.profile_service import get_active_profile
 from app.services.jobs.israel_filter import israel_only_clause
+from app.services.matching.queries import MatchFilters, count_top_matches, window_start
 from app.services.scheduler_state import crawl_queue_depth, last_dispatch_at, next_dispatch_at
+
+# The matches page's default view (frontend DEFAULT_FILTERS), restricted
+# to today: what "relevant today" counts on the page's live line.
+_TODAYS_DEFAULT_VIEW = MatchFilters(
+    min_score=60, seniority="not_experienced", discovered_within_days=0
+)
 
 
 @dataclass(frozen=True)
@@ -67,6 +75,12 @@ class DashboardStats:
     active_unknown_location_jobs: int
     matches: int
     jobs_discovered_24h: int
+    # Since local midnight: everything the crawler stored, and how much of
+    # it the matches page's default view shows - the two numbers the live
+    # line on that page reports, so "nothing new" and "nothing relevant"
+    # stay distinguishable.
+    jobs_found_today: int
+    relevant_today: int
     last_crawl_at: datetime | None
     # The scheduler's own heartbeat (Redis), separate from crawl rows: a
     # tick with nothing due still proves Beat is alive.
@@ -106,6 +120,10 @@ def load_dashboard_stats(db: Session) -> DashboardStats:
         db.scalar(select(func.count()).where(JobPosting.first_seen_at >= now - timedelta(hours=24)))
         or 0
     )
+    today = window_start(0)
+    found_today = db.scalar(select(func.count()).where(JobPosting.first_seen_at >= today)) or 0
+    profile = get_active_profile(db)
+    relevant_today = count_top_matches(db, profile.id, _TODAYS_DEFAULT_VIEW) if profile else 0
     last_crawl_at = db.scalar(select(func.max(CrawlRun.started_at)))
     hour_ago = now - timedelta(hours=1)
     runs_last_hour = db.scalar(select(func.count()).where(CrawlRun.started_at >= hour_ago)) or 0
@@ -164,6 +182,8 @@ def load_dashboard_stats(db: Session) -> DashboardStats:
         active_unknown_location_jobs=active_unknown,
         matches=matches,
         jobs_discovered_24h=discovered_24h,
+        jobs_found_today=found_today,
+        relevant_today=relevant_today,
         last_crawl_at=last_crawl_at,
         last_dispatch_at=last_dispatch_at(),
         next_dispatch_at=next_dispatch_at(),

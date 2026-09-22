@@ -273,6 +273,10 @@ def test_dashboard_stats_and_root_redirect(api_client: TestClient, db_session: S
     body = stats.json()
     assert body["active_jobs"] >= 1
     assert body["matches"] >= 2
+    # The seeded open job was found just now and is a 95-point Israeli
+    # match: the live line on the matches page counts it on both sides.
+    assert body["jobs_found_today"] >= 1
+    assert body["relevant_today"] >= 1
     assert any(row["source_type"] == "greenhouse" for row in body["by_source_type"])
 
     root = api_client.get("/", follow_redirects=False)

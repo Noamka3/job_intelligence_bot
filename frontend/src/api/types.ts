@@ -204,6 +204,8 @@ export interface DashboardStats {
   active_unknown_location_jobs: number;
   matches: number;
   jobs_discovered_24h: number;
+  jobs_found_today: number;
+  relevant_today: number;
   last_crawl_at: string | null;
   last_dispatch_at: string | null;
   next_dispatch_at: string | null;

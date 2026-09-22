@@ -74,7 +74,7 @@ MatchSort = Literal["recent", "score"]
 SEMANTIC_MAX_DISTANCE = 0.75
 
 
-def _window_start(days_back: int) -> datetime:
+def window_start(days_back: int) -> datetime:
     """Local midnight `days_back` days ago (0 = today). What people mean
     by "3 days": a job the card labels "found 3 days ago" is inside it,
     which a plain 72-hour window missed by a few hours."""
@@ -128,6 +128,31 @@ def _latest_feedback_subquery() -> Select[tuple[int, JobFeedbackAction]]:
 def list_top_matches(
     db: Session, candidate_profile_id: int, filters: MatchFilters
 ) -> list[MatchRow]:
+    query = (
+        _top_matches_query(candidate_profile_id, filters)
+        .limit(filters.limit)
+        .offset(filters.offset)
+    )
+    return [
+        MatchRow(
+            match=match,
+            job=job,
+            company=company,
+            source=source,
+            last_feedback=action,
+            seniority_fit=fit_value,
+        )
+        for match, job, company, source, action, fit_value in db.execute(query).all()
+    ]
+
+
+def count_top_matches(db: Session, candidate_profile_id: int, filters: MatchFilters) -> int:
+    """How many matches the same filters select, unpaginated."""
+    ids = _top_matches_query(candidate_profile_id, filters).with_only_columns(JobMatch.id)
+    return db.scalar(select(func.count()).select_from(ids.order_by(None).subquery())) or 0
+
+
+def _top_matches_query(candidate_profile_id: int, filters: MatchFilters) -> Select[Any]:
     latest_feedback = _latest_feedback_subquery().subquery()
 
     # "Newest first" means the posting date when the source reports one,
@@ -167,15 +192,13 @@ def list_top_matches(
             JobPosting.status == JobStatus.ACTIVE,
         )
         .order_by(*ordering)
-        .limit(filters.limit)
-        .offset(filters.offset)
     )
     if filters.israel_only:
         query = query.where(israel_only_clause())
     if filters.target_role_id is not None:
         query = query.where(JobMatch.target_role_id == filters.target_role_id)
     if filters.discovered_within_days is not None:
-        since = _window_start(filters.discovered_within_days)
+        since = window_start(filters.discovered_within_days)
         # Recent means the bot found it recently *or* the source says it
         # was (re)published recently - the card shows the publish date when
         # there is one, so a job "published yesterday" must not vanish from
@@ -203,18 +226,7 @@ def list_top_matches(
                 latest_feedback.c.action.not_in(_DISMISSING_FEEDBACK),
             )
         )
-
-    return [
-        MatchRow(
-            match=match,
-            job=job,
-            company=company,
-            source=source,
-            last_feedback=action,
-            seniority_fit=fit_value,
-        )
-        for match, job, company, source, action, fit_value in db.execute(query).all()
-    ]
+    return query
 
 
 def get_match_for_job(db: Session, candidate_profile_id: int, job_id: int) -> MatchRow | None:
