@@ -134,6 +134,19 @@ def test_score_seniority_rewards_junior_titles() -> None:
     assert score == 1.0
 
 
+def test_stated_years_outrank_a_junior_looking_title() -> None:
+    """Live: "מפתח/ת Full Stack" asking for "לפחות 2-3 שנות ניסיון - חובה"
+    scored 91% for a candidate with no experience, because two years read
+    as "junior" and the junior label short-circuited the years check."""
+    assessment = assess_seniority("מפתח/ת Full Stack", "לפחות 2-3 שנות ניסיון בפיתוח - חובה")
+    assert assessment.min_years_required == 2
+
+    score, reason = score_seniority(assessment, max_expected_years=1)
+
+    assert score == 0.75
+    assert "1 more than your target ceiling" in reason
+
+
 def test_hebrew_years_requirements_are_read() -> None:
     """Live: "לפחות 4 שנות ניסיון" (AI Platform Developer, Shavit) read as
     "no clear seniority signal" and the job showed at 61% to a candidate

@@ -319,3 +319,22 @@ def test_top_matches_tag_and_filter_by_what_the_posting_says_about_experience(
     assert abroad_job.id not in {m["job_id"] for m in not_experienced}
 
     assert api_client.get("/matches/top", params={"seniority": "bogus"}).status_code == 422
+
+
+def test_stated_years_above_the_roles_ceiling_tag_a_junior_looking_posting_as_experienced(
+    api_client: TestClient, db_session: Session
+) -> None:
+    """A posting whose title reads junior but which asks for two years,
+    against a role whose ceiling is one year: the years decide."""
+    from app.models.enums import SeniorityLevel
+
+    open_job, _, _ = _seed(db_session)
+    open_job.seniority = SeniorityLevel.JUNIOR
+    open_job.experience_min_years = 2
+    role = db_session.execute(select(TargetRole)).scalar_one()
+    role.max_expected_years = 1
+    db_session.commit()
+
+    (match,) = [m for m in api_client.get("/matches/top").json() if m["job_id"] == open_job.id]
+
+    assert match["seniority_fit"] == "experienced"

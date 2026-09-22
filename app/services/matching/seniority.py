@@ -330,9 +330,8 @@ def score_seniority(
     if assessment.level in _STRONGLY_SENIOR_LEVELS:
         return 0.05, f"looks senior-level ({assessment.signal})"
 
-    if assessment.level in (SeniorityLevel.JUNIOR, SeniorityLevel.INTERN):
-        return 1.0, f"entry-level signal ({assessment.signal})"
-
+    # Stated years outrank an entry-level read of the title: "2-3 years
+    # mandatory" is a requirement whatever the title looks like.
     if max_expected_years is not None and assessment.min_years_required is not None:
         gap = assessment.min_years_required - max_expected_years
         if gap <= 0:
@@ -342,5 +341,8 @@ def score_seniority(
             score,
             f"requires {assessment.min_years_required}y, {gap} more than your target ceiling",
         )
+
+    if assessment.level in (SeniorityLevel.JUNIOR, SeniorityLevel.INTERN):
+        return 1.0, f"entry-level signal ({assessment.signal})"
 
     return 0.5, "no clear seniority signal"

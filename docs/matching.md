@@ -123,10 +123,13 @@ with no experience. Now:
 The read is stored on the posting at ingest (`JobPosting.seniority`,
 `experience_min_years`; `reassess-seniority` backfills) and the API
 derives a **seniority fit** per match relative to the target role's
-`max_expected_years`: `fit` (entry-level title, or stated years within
-the ceiling), `experienced` (senior-level title, or years above it),
-`unknown` (nothing readable). The dashboard shows it as a tag on every
-card and filters on it; the default view hides `experienced`.
+`max_expected_years`: `experienced` (senior-level title, or stated years
+above the ceiling), `fit` (stated years within it, or else an
+entry-level title), `unknown` (nothing readable). Stated years outrank
+the title's level - "2-3 years mandatory" under a junior-looking title
+is a requirement - and the same order drives the seniority score. The
+dashboard shows the fit as a tag on every card and filters on it; the
+default view hides `experienced`. Noam's role ceiling is 1 year.
 - **Better embeddings underneath**: single-blob descriptions now lead
   with their recognizable requirements section (the same heading
   detection seniority uses), and the local provider embeds long texts in

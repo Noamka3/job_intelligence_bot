@@ -25,10 +25,13 @@ from app.services.jobs.israel_filter import israel_only_clause
 
 # What a posting's stored seniority read (JobPosting.seniority and
 # experience_min_years, set at ingest) means for *this* target role:
-#   fit         - an entry-level title, or stated years within the role's
+#   experienced - a senior-level title, or stated years above the role's
 #                 max_expected_years
-#   experienced - a senior-level title, or stated years above it
+#   fit         - stated years within it, or else an entry-level title
 #   unknown     - the posting says nothing readable about experience
+# Stated years outrank the title's level: "2-3 years mandatory" under a
+# junior-looking title is a requirement, and a candidate with none
+# doesn't meet it.
 SeniorityFit = Literal["fit", "unknown", "experienced"]
 SeniorityFilter = Literal["all", "fit", "not_experienced"]
 
@@ -48,10 +51,10 @@ def seniority_fit_expression() -> Any:
     """SQL for SeniorityFit; needs JobPosting and TargetRole in the FROM."""
     ceiling = func.coalesce(TargetRole.max_expected_years, _DEFAULT_MAX_EXPECTED_YEARS)
     return case(
-        (JobPosting.seniority.in_(_ENTRY_LEVELS), "fit"),
         (JobPosting.seniority.in_(_SENIOR_LEVELS), "experienced"),
         (JobPosting.experience_min_years > ceiling, "experienced"),
         (JobPosting.experience_min_years.is_not(None), "fit"),
+        (JobPosting.seniority.in_(_ENTRY_LEVELS), "fit"),
         else_="unknown",
     )
 
