@@ -23,8 +23,9 @@ from app.services.jobs.israel_filter import israel_only_clause
 from app.services.matching.queries import MatchFilters, count_top_matches, window_start
 from app.services.scheduler_state import crawl_queue_depth, last_dispatch_at, next_dispatch_at
 
-# The matches page's default view (frontend DEFAULT_FILTERS), restricted
-# to today: what "relevant today" counts on the page's live line.
+# What the matches page's live line calls "over 60% today": today's
+# Israeli (or unplaced) postings that don't demand experience, scored
+# 60 or more - the same query the page's own 60%+ view runs.
 _TODAYS_DEFAULT_VIEW = MatchFilters(
     min_score=60, seniority="not_experienced", discovered_within_days=0
 )

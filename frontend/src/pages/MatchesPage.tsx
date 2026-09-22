@@ -19,10 +19,12 @@ import { relativeTime } from "../lib/format";
 const LIVE_MS = 30_000;
 
 const DEFAULT_FILTERS: MatchFilters = {
-  minScore: 60,
-  // What the bot found in the last three days, newest first - a posting
-  // older than that is still one click away ("כל הזמן"), never deleted.
-  days: 3,
+  // Everything found or published today, whatever its score, newest
+  // first - the user's choice: the day's full picture, with the score
+  // ring to judge each one; older postings and the 60%+ cut are one
+  // click away, nothing is deleted.
+  minScore: 0,
+  days: 0,
   targetRoleId: null,
   region: null,
   israelOnly: true,
@@ -110,7 +112,7 @@ export function MatchesPage() {
           {stats.data && (
             <p className="page__subtitle" aria-live="polite">
               היום נמצאו {stats.data.jobs_found_today} משרות חדשות, {stats.data.relevant_today} מהן
-              מתאימות לך
+              מעל 60% התאמה
               {stats.data.last_crawl_at &&
                 ` · סריקה אחרונה ${relativeTime(stats.data.last_crawl_at)}`}
               . הרשימה מתעדכנת לבד ברגע שנמצא משהו חדש.
