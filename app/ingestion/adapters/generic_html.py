@@ -76,6 +76,7 @@ _CTA_TEXT_RE = re.compile(
     r"|פרטים(?: נוספים)?)$",
     re.I,
 )
+_TITLE_WORD_SPLIT_RE = re.compile(r"[\s/,\-–|]+")
 _HEADINGS = ("h1", "h2", "h3", "h4", "h5", "h6")
 _TITLE_CLASS_RE = re.compile(r"title|position-name|job-name|role", re.I)
 _SKIP_SCHEMES = ("mailto:", "tel:", "javascript:", "#")
@@ -129,7 +130,7 @@ def details_from_html(html: str, final_url: str, stub: JobStub) -> JobDetails:
 def extract_job_links(html: str, page_url: str) -> list[tuple[str, str]]:
     """[(absolute job URL, title)] in page order, de-duplicated."""
     soup = BeautifulSoup(html, "lxml")
-    page_host = _registrable_host(urlparse(page_url).hostname or "")
+    page_host = registrable_host(urlparse(page_url).hostname or "")
 
     candidates: list[tuple[str, str, tuple[str, ...]]] = []
     for anchor in soup.find_all("a", href=True):
@@ -140,7 +141,7 @@ def extract_job_links(html: str, page_url: str) -> list[tuple[str, str]]:
         parsed = urlparse(url)
         if parsed.scheme not in ("http", "https"):
             continue
-        if _registrable_host(parsed.hostname or "") != page_host:
+        if registrable_host(parsed.hostname or "") != page_host:
             continue
         if parsed.path.lower().endswith(_SKIP_EXTENSIONS):
             continue
@@ -235,7 +236,17 @@ def _looks_like_job(url: str, title: str) -> bool:
     return bool(_JOBISH_PATH_RE.search(urlparse(url).path)) or bool(_ROLE_WORD_RE.search(title))
 
 
-def _registrable_host(hostname: str) -> str:
+def looks_like_a_job_title(title: str) -> bool:
+    """A role word, in a title of more than one bare word. The second
+    half matters: "head" and "data" are role words, and as a lone word
+    they are a Wix layout node or a menu entry, not a posting."""
+    words = [word for word in _TITLE_WORD_SPLIT_RE.split(title.strip()) if word]
+    return len(words) >= 2 and bool(_ROLE_WORD_RE.search(title))
+
+
+def registrable_host(hostname: str) -> str:
+    """ "acme.co.il" for careers.acme.co.il - what "the same site" means
+    for a link on a page, and for a feed the page fetched."""
     labels = hostname.lower().split(".")
     # Good enough for career pages: keep the last two labels, or three
     # for two-level public suffixes like .co.il / .co.uk.

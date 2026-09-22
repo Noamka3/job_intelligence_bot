@@ -250,6 +250,48 @@ identifier = REST base) and `adapters/wordpress.py` lists it, reading a
 post's own page when the API returns no text (One). The other 24 keep
 their jobs in a plugin the API does not show and stay `generic_html`.
 
+### Reading what a rendered page *fetches* (coverage step 4)
+A JS-rendered career page often paints cards with no links at all, while
+its own scripts pull the postings from an API. The browser adapter
+records those responses (same registrable host only, JSON only,
+size-capped) and `adapters/sniffed_feed.py` decides whether one of them
+is a job list.
+
+Choosing which captured document is the job list took two wrong turns,
+both caught on real data:
+
+1. *"a list of objects with titles"* — Compie's client logos came back
+   as a job called **Bank Hapoalim**, and a Wix site's layout nodes as a
+   job called **head**.
+2. *"...whose rows also carry a description or a date"* — field names
+   don't separate them either. Compie's **product cards** carry
+   `description`; its real postings keep theirs under `AboutTheRole`, so
+   this rule kept the marketing and threw away the jobs, and dropped
+   Ness's 207 postings entirely (their date field is `lastUpdated`).
+
+What does separate them is whether the *titles* read like job titles: a
+role word (the generic adapter's English + Hebrew vocabulary) in a title
+of more than one bare word — "head" and "data" are role words, and alone
+they are layout nodes. Measured across four sites' captured feeds:
+
+| Site | Real postings | Best noise |
+|---|---|---|
+| Ness | 207 rows, **45%** job titles | 0% |
+| Compie | 14 rows, **100%** | 40% (its management team) |
+| Bluevoyant | 7 rows, **100%** | 0% |
+| high lander | none | 0% |
+
+So the candidate with the highest share wins and must clear 40%. The
+closest noise is a management team page, whose titles ("VP HR", "Deputy
+CEO") really are job titles - of people who already hold them - and
+which score far too senior to ever surface.
+
+A page that calls an ATS's API (biocatch fetches its cards from Comeet's
+positions endpoint and names Comeet nowhere in its HTML) is not scraped
+at all: `resolver.board_behind_page` recognises the call, the crawler
+re-points the source at the public board, and the ATS's own adapter
+reads it from then on.
+
 ### Browser fallback (coverage step 3)
 `adapters/browser.py` (source type `playwright`) renders a page in
 headless Chromium - installed in the worker image, `Dockerfile` - and

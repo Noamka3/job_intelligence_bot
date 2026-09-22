@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import httpx
 import pytest
 import respx
 
 from app.ingestion.adapters import browser
-from app.ingestion.adapters.browser import BrowserAdapter
+from app.ingestion.adapters.browser import BrowserAdapter, Rendered
 from app.models.career_source import CareerSource
 from app.models.enums import CareerSourceType
 
@@ -27,10 +29,14 @@ _RENDERED_POSTING = (
 _JS_SHELL = '<html><body><div id="root"></div><script src="/app.js"></script></body></html>'
 
 
+def _renders(html: str) -> Callable[[str], Rendered]:
+    return lambda url: Rendered(url=url, html=html)
+
+
 def test_list_jobs_reads_the_rendered_page_like_a_plain_one(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(browser, "render", lambda url: (url, _RENDERED_LISTING))
+    monkeypatch.setattr(browser, "render", _renders(_RENDERED_LISTING))
 
     stubs = BrowserAdapter().list_jobs(_SOURCE)
 
@@ -49,10 +55,10 @@ def test_fetch_job_renders_only_when_the_plain_page_is_a_shell(
     """Many JS-listed sites still serve the posting itself as HTML; the
     browser is spent only on pages that come back as an empty shell."""
     adapter = BrowserAdapter()
-    monkeypatch.setattr(browser, "render", lambda url: (url, _RENDERED_LISTING))
+    monkeypatch.setattr(browser, "render", _renders(_RENDERED_LISTING))
     (stub, *_) = adapter.list_jobs(_SOURCE)
     respx.get(stub.source_url).mock(return_value=httpx.Response(200, text=_JS_SHELL))
-    monkeypatch.setattr(browser, "render", lambda url: (url, _RENDERED_POSTING))
+    monkeypatch.setattr(browser, "render", _renders(_RENDERED_POSTING))
 
     details = adapter.fetch_job(_SOURCE, stub)
 

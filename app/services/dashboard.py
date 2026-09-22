@@ -126,6 +126,7 @@ def load_dashboard_stats(db: Session) -> DashboardStats:
     profile = get_active_profile(db)
     relevant_today = count_top_matches(db, profile.id, _TODAYS_DEFAULT_VIEW) if profile else 0
     last_crawl_at = db.scalar(select(func.max(CrawlRun.started_at)))
+    last_dispatch = last_dispatch_at()
     hour_ago = now - timedelta(hours=1)
     runs_last_hour = db.scalar(select(func.count()).where(CrawlRun.started_at >= hour_ago)) or 0
     failed_last_hour = (
@@ -186,8 +187,8 @@ def load_dashboard_stats(db: Session) -> DashboardStats:
         jobs_found_today=found_today,
         relevant_today=relevant_today,
         last_crawl_at=last_crawl_at,
-        last_dispatch_at=last_dispatch_at(),
-        next_dispatch_at=next_dispatch_at(),
+        last_dispatch_at=last_dispatch,
+        next_dispatch_at=next_dispatch_at(last_dispatch),
         poll_interval_minutes=get_settings().default_poll_minutes,
         crawl_queue_depth=crawl_queue_depth(),
         runs_last_hour=runs_last_hour,

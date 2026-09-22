@@ -97,6 +97,17 @@ class JobUnavailableError(LookupError):
         self.reason = reason
 
 
+class BoardBehindPage(Exception):
+    """Raised by list_jobs when the page turns out to be a front for a
+    known ATS board (the browser saw the page call Comeet's or
+    Greenhouse's API). The crawler re-points the source at that board,
+    whose adapter reads it properly, instead of scraping a rendering."""
+
+    def __init__(self, board: Any) -> None:  # a resolver.ResolvedSource
+        super().__init__(f"page is a front for {board.source_type.value}")
+        self.board = board
+
+
 class JobSourceAdapter(Protocol):
     def list_jobs(self, source: CareerSource) -> list[JobStub]: ...
 

@@ -11,6 +11,11 @@ dashboard, all in Docker. Everything it needs to score a job runs
 locally — embeddings and the LLM included — so there is no API bill and
 no CV leaving the machine.
 
+![Architecture](docs/architecture.svg)
+
+<details>
+<summary>The same flow in one line</summary>
+
 ```
 Google Sheet ─► company sync ─► source resolver ─► 11 source adapters
                                                           │
@@ -22,6 +27,8 @@ Google Sheet ─► company sync ─► source resolver ─► 11 source adapter
                                    │
                    REST API ─► React dashboard ─► (WhatsApp, planned)
 ```
+
+</details>
 
 > **Status:** phases 1–9 complete and running daily. Phase 7 (WhatsApp
 > alerts) and phase 10 (deployment to a VPS) are the remaining work; see
@@ -58,6 +65,16 @@ adapter that works handles it. Measured against the real sheet:
 | JSON-LD | `schema.org/JobPosting` markup, present for Google for Jobs | 1 | ~3 s |
 | Plain HTML | the page's own structure, no fixed selectors | 138 | 2–5 s |
 | Headless browser | Playwright, only when everything above found nothing | escalated automatically | ~20 s |
+
+A rendered page is also watched for what it *fetches*: the JSON its own
+scripts pull becomes the job list when the HTML has no links to follow,
+and a page that calls an ATS's API is re-pointed at that board instead
+of being scraped. Picking the right captured document is harder than it
+sounds — field names lie (one site's *product cards* carry a
+`description` while its postings keep theirs under `AboutTheRole`), so
+the test is whether the titles read like job titles. The calibration,
+and the two wrong rules that preceded it, are in
+[`docs/job_sources.md`](docs/job_sources.md).
 
 Two details I'm happy with:
 

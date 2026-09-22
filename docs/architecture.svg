@@ -1,0 +1,246 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 980" width="1440" height="980" font-family="Inter, Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#f4f6fb"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#8b95a8"/>
+    </marker>
+    <marker id="arrowAccent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#3b6fd4"/>
+    </marker>
+    <filter id="card" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#0b1b3a" flood-opacity="0.10"/>
+    </filter>
+  </defs>
+
+  <rect width="1440" height="980" fill="url(#bg)"/>
+
+  <!-- ══ header ══ -->
+  <text x="56" y="62" font-size="30" font-weight="700" fill="#0b1b3a">Job Intelligence Bot</text>
+  <text x="56" y="90" font-size="16" fill="#5a6782">Watches ~240 company career pages, reads each posting against a CV, surfaces only what fits. Everything runs locally.</text>
+  <g transform="translate(1086,40)">
+    <rect width="298" height="56" rx="12" fill="#eef3ff" stroke="#c9d8f7"/>
+    <text x="16" y="24" font-size="12" font-weight="600" fill="#3b6fd4">MEASURED ON LIVE DATA</text>
+    <text x="16" y="44" font-size="13" fill="#31405c">5,300 active postings · 208 sources · 380 tests</text>
+  </g>
+
+  <!-- ══ 1. SOURCES ══ -->
+  <g transform="translate(56,132)">
+    <rect width="300" height="236" rx="16" fill="#ffffff" stroke="#dfe5f0" filter="url(#card)"/>
+    <text x="20" y="32" font-size="13" font-weight="700" fill="#8b95a8" letter-spacing="1">1 · WHERE JOBS COME FROM</text>
+
+    <rect x="20" y="48" width="260" height="52" rx="10" fill="#f7f9fd" stroke="#e3e9f4"/>
+    <text x="34" y="70" font-size="15" font-weight="600" fill="#0b1b3a">Google Sheet</text>
+    <text x="34" y="89" font-size="12.5" fill="#5a6782">242 companies · the only manual input</text>
+
+    <path d="M150 104 L150 122" stroke="#8b95a8" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+    <rect x="20" y="126" width="260" height="52" rx="10" fill="#f7f9fd" stroke="#e3e9f4"/>
+    <text x="34" y="148" font-size="15" font-weight="600" fill="#0b1b3a">Company sync</text>
+    <text x="34" y="167" font-size="12.5" fill="#5a6782">upsert, never delete · LinkedIn refused</text>
+
+    <path d="M150 182 L150 200" stroke="#8b95a8" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+    <rect x="20" y="204" width="260" height="20" rx="6" fill="#fff8e8" stroke="#f3e2b8"/>
+    <text x="34" y="218" font-size="12" fill="#8a6d1f">34 LinkedIn rows never scraped (ToS)</text>
+  </g>
+
+  <!-- ══ 2. RESOLVER ══ -->
+  <g transform="translate(56,392)">
+    <rect width="300" height="150" rx="16" fill="#ffffff" stroke="#dfe5f0" filter="url(#card)"/>
+    <text x="20" y="32" font-size="13" font-weight="700" fill="#8b95a8" letter-spacing="1">2 · SOURCE RESOLVER</text>
+    <text x="20" y="58" font-size="14" fill="#31405c">Classifies each URL once:</text>
+    <text x="20" y="80" font-size="13" fill="#5a6782">• hostname → known ATS</text>
+    <text x="20" y="101" font-size="13" fill="#5a6782">• reads the page for an embedded board</text>
+    <text x="20" y="122" font-size="13" fill="#5a6782">• a guess is kept only if the ATS API answers</text>
+    <rect x="20" y="130" width="260" height="0" fill="none"/>
+  </g>
+
+  <!-- arrows from column 1 to column 2 -->
+  <path d="M356 250 L404 250" stroke="#3b6fd4" stroke-width="2" marker-end="url(#arrowAccent)"/>
+  <path d="M356 460 L404 460" stroke="#3b6fd4" stroke-width="2" marker-end="url(#arrowAccent)"/>
+
+  <!-- ══ 3. ADAPTER LADDER ══ -->
+  <g transform="translate(404,132)">
+    <rect width="372" height="410" rx="16" fill="#ffffff" stroke="#dfe5f0" filter="url(#card)"/>
+    <text x="20" y="32" font-size="13" font-weight="700" fill="#8b95a8" letter-spacing="1">3 · ADAPTER LADDER — CHEAPEST FIRST</text>
+
+    <g transform="translate(20,46)">
+      <rect width="332" height="54" rx="10" fill="#eaf5ec" stroke="#c3e2ca"/>
+      <text x="14" y="23" font-size="14" font-weight="600" fill="#1d6b33">ATS API · 50 sources</text>
+      <text x="14" y="42" font-size="12.5" fill="#3d7a4f">Greenhouse · Lever · Ashby · Comeet · Workable</text>
+      <text x="292" y="33" font-size="12" font-weight="600" fill="#1d6b33">1–6 s</text>
+    </g>
+    <g transform="translate(20,108)">
+      <rect width="332" height="54" rx="10" fill="#eaf5ec" stroke="#c3e2ca"/>
+      <text x="14" y="23" font-size="14" font-weight="600" fill="#1d6b33">Site feed · 3 sources</text>
+      <text x="14" y="42" font-size="12.5" fill="#3d7a4f">the JSON the company's own page fetches</text>
+      <text x="296" y="33" font-size="12" font-weight="600" fill="#1d6b33">~8 s</text>
+    </g>
+    <g transform="translate(20,170)">
+      <rect width="332" height="54" rx="10" fill="#f2f6ee" stroke="#d6e3c8"/>
+      <text x="14" y="23" font-size="14" font-weight="600" fill="#4a6b2a">WordPress REST · 13 sources</text>
+      <text x="14" y="42" font-size="12.5" fill="#5f7a42">jobs stored as a custom post type</text>
+      <text x="292" y="33" font-size="12" font-weight="600" fill="#4a6b2a">~10 s</text>
+    </g>
+    <g transform="translate(20,232)">
+      <rect width="332" height="54" rx="10" fill="#fdf6e9" stroke="#efdfc0"/>
+      <text x="14" y="23" font-size="14" font-weight="600" fill="#8a6d1f">Plain HTML · 138 sources</text>
+      <text x="14" y="42" font-size="12.5" fill="#9a7d33">page structure, no fixed selectors</text>
+      <text x="292" y="33" font-size="12" font-weight="600" fill="#8a6d1f">2–5 s</text>
+    </g>
+    <g transform="translate(20,294)">
+      <rect width="332" height="66" rx="10" fill="#fdeeee" stroke="#f2cfcf"/>
+      <text x="14" y="23" font-size="14" font-weight="600" fill="#a33a3a">Headless browser (Playwright)</text>
+      <text x="14" y="42" font-size="12.5" fill="#b35555">renders JS pages · sniffs their JSON feeds</text>
+      <text x="14" y="59" font-size="11.5" fill="#b35555">entered automatically after 3 empty crawls or a 403</text>
+      <text x="290" y="33" font-size="12" font-weight="600" fill="#a33a3a">~20 s</text>
+    </g>
+    <text x="20" y="392" font-size="12" fill="#8b95a8">A page that turns out to front a real ATS board is re-pointed at it.</text>
+  </g>
+
+  <!-- ══ 4. INGESTION ══ -->
+  <path d="M776 330 L824 330" stroke="#3b6fd4" stroke-width="2" marker-end="url(#arrowAccent)"/>
+  <g transform="translate(824,132)">
+    <rect width="300" height="236" rx="16" fill="#ffffff" stroke="#dfe5f0" filter="url(#card)"/>
+    <text x="20" y="32" font-size="13" font-weight="700" fill="#8b95a8" letter-spacing="1">4 · INCREMENTAL INGESTION</text>
+    <text x="20" y="58" font-size="14" fill="#31405c">Listing diff — the expensive part</text>
+    <text x="20" y="80" font-size="13" fill="#5a6782">A job page is downloaded only when</text>
+    <text x="20" y="99" font-size="13" fill="#5a6782">its link is new, the source reports an</text>
+    <text x="20" y="118" font-size="13" fill="#5a6782">update, or the copy is a day old.</text>
+    <rect x="20" y="132" width="260" height="46" rx="8" fill="#eef3ff" stroke="#c9d8f7"/>
+    <text x="34" y="151" font-size="12.5" fill="#3b6fd4">85% of crawl time removed</text>
+    <text x="34" y="169" font-size="12.5" fill="#31405c">5.5 s → 2.1 s per site · polling 30 → 10 min</text>
+    <text x="20" y="200" font-size="12.5" fill="#5a6782">normalize → dedupe → embed locally</text>
+    <text x="20" y="220" font-size="12.5" fill="#5a6782">missing 3 crawls in a row → closed, never deleted</text>
+  </g>
+
+  <!-- ══ 5. STORAGE ══ -->
+  <path d="M974 368 L974 402" stroke="#3b6fd4" stroke-width="2" marker-end="url(#arrowAccent)"/>
+  <g transform="translate(824,402)">
+    <rect width="300" height="140" rx="16" fill="#ffffff" stroke="#dfe5f0" filter="url(#card)"/>
+    <text x="20" y="32" font-size="13" font-weight="700" fill="#8b95a8" letter-spacing="1">5 · STORAGE</text>
+    <text x="20" y="58" font-size="15" font-weight="600" fill="#0b1b3a">PostgreSQL + pgvector</text>
+    <text x="20" y="80" font-size="12.5" fill="#5a6782">postings · matches · crawl runs · applications</text>
+    <text x="20" y="101" font-size="12.5" fill="#5a6782">384-dim embeddings, HNSW index</text>
+    <text x="20" y="124" font-size="12.5" fill="#5a6782">publish date and discovery date never conflated</text>
+  </g>
+
+  <!-- ══ 6. MATCHING ══ -->
+  <path d="M1124 470 L1160 470" stroke="#3b6fd4" stroke-width="2" marker-end="url(#arrowAccent)"/>
+  <g transform="translate(1160,132)">
+    <rect width="224" height="410" rx="16" fill="#ffffff" stroke="#dfe5f0" filter="url(#card)"/>
+    <text x="18" y="32" font-size="13" font-weight="700" fill="#8b95a8" letter-spacing="1">6 · MATCHING</text>
+
+    <rect x="18" y="46" width="188" height="56" rx="10" fill="#eef3ff" stroke="#c9d8f7"/>
+    <text x="30" y="68" font-size="13.5" font-weight="600" fill="#3b6fd4">score = role gate</text>
+    <text x="30" y="88" font-size="13.5" font-weight="600" fill="#3b6fd4">× quality</text>
+
+    <text x="18" y="128" font-size="12.5" fill="#31405c">The gate asks: is this even</text>
+    <text x="18" y="146" font-size="12.5" fill="#31405c">the role? A 0.98-similarity</text>
+    <text x="18" y="164" font-size="12.5" fill="#31405c">sales role lands at 30%.</text>
+
+    <text x="18" y="196" font-size="12" font-weight="700" fill="#8b95a8">QUALITY WEIGHTS</text>
+    <text x="18" y="217" font-size="12.5" fill="#5a6782">seniority 45% · skills 30%</text>
+    <text x="18" y="236" font-size="12.5" fill="#5a6782">CV 12% · intent 8%</text>
+    <text x="18" y="255" font-size="12.5" fill="#5a6782">location 3% · recency 2%</text>
+
+    <text x="18" y="288" font-size="12" font-weight="700" fill="#8b95a8">SENIORITY, HE + EN</text>
+    <text x="18" y="309" font-size="12.5" fill="#5a6782">"3-5 שנות ניסיון" → 3 years</text>
+    <text x="18" y="328" font-size="12.5" fill="#5a6782">stated years beat the title</text>
+
+    <rect x="18" y="346" width="188" height="46" rx="8" fill="#f7f9fd" stroke="#e3e9f4"/>
+    <text x="30" y="365" font-size="12" fill="#31405c">Every match carries</text>
+    <text x="30" y="383" font-size="12" fill="#31405c">reasons and concerns.</text>
+  </g>
+
+  <!-- ══ 7. SCHEDULER (band) ══ -->
+  <g transform="translate(56,576)">
+    <rect width="1328" height="122" rx="16" fill="#ffffff" stroke="#dfe5f0" filter="url(#card)"/>
+    <text x="20" y="32" font-size="13" font-weight="700" fill="#8b95a8" letter-spacing="1">7 · SCHEDULING — CELERY BEAT + REDIS, IN DOCKER</text>
+
+    <g transform="translate(20,46)">
+      <rect width="250" height="58" rx="10" fill="#f7f9fd" stroke="#e3e9f4"/>
+      <text x="14" y="24" font-size="13.5" font-weight="600" fill="#0b1b3a">Dispatcher · every 5 min</text>
+      <text x="14" y="43" font-size="12" fill="#5a6782">own queue, own worker, never queued behind crawls</text>
+    </g>
+    <path d="M276 75 L310 75" stroke="#8b95a8" stroke-width="1.6" marker-end="url(#arrow)"/>
+    <g transform="translate(314,46)">
+      <rect width="250" height="58" rx="10" fill="#f7f9fd" stroke="#e3e9f4"/>
+      <text x="14" y="24" font-size="13.5" font-weight="600" fill="#0b1b3a">Leases each source</text>
+      <text x="14" y="43" font-size="12" fill="#5a6782">before queueing, so no source is crawled twice</text>
+    </g>
+    <path d="M570 75 L604 75" stroke="#8b95a8" stroke-width="1.6" marker-end="url(#arrow)"/>
+    <g transform="translate(608,46)">
+      <rect width="250" height="58" rx="10" fill="#f7f9fd" stroke="#e3e9f4"/>
+      <text x="14" y="24" font-size="13.5" font-weight="600" fill="#0b1b3a">API sources first</text>
+      <text x="14" y="43" font-size="12" fill="#5a6782">a fast board never waits behind a 250-page site</text>
+    </g>
+    <path d="M864 75 L898 75" stroke="#8b95a8" stroke-width="1.6" marker-end="url(#arrow)"/>
+    <g transform="translate(902,46)">
+      <rect width="250" height="58" rx="10" fill="#eaf5ec" stroke="#c3e2ca"/>
+      <text x="14" y="24" font-size="13.5" font-weight="600" fill="#1d6b33">2 worker processes</text>
+      <text x="14" y="43" font-size="12" fill="#3d7a4f">capped: each loads its own embedding model</text>
+    </g>
+    <g transform="translate(1166,46)">
+      <rect width="142" height="58" rx="10" fill="#fdf6e9" stroke="#efdfc0"/>
+      <text x="14" y="24" font-size="13" font-weight="600" fill="#8a6d1f">New job visible</text>
+      <text x="14" y="43" font-size="12" fill="#9a7d33">in 5–12 minutes</text>
+    </g>
+  </g>
+
+  <!-- ══ 8. DELIVERY ══ -->
+  <g transform="translate(56,730)">
+    <rect width="642" height="196" rx="16" fill="#ffffff" stroke="#dfe5f0" filter="url(#card)"/>
+    <text x="20" y="32" font-size="13" font-weight="700" fill="#8b95a8" letter-spacing="1">8 · DELIVERY</text>
+
+    <g transform="translate(20,46)">
+      <rect width="290" height="64" rx="10" fill="#f7f9fd" stroke="#e3e9f4"/>
+      <text x="14" y="25" font-size="14" font-weight="600" fill="#0b1b3a">FastAPI</text>
+      <text x="14" y="45" font-size="12.5" fill="#5a6782">REST API · serves the dashboard</text>
+    </g>
+    <path d="M316 78 L348 78" stroke="#8b95a8" stroke-width="1.6" marker-end="url(#arrow)"/>
+    <g transform="translate(352,46)">
+      <rect width="270" height="64" rx="10" fill="#f7f9fd" stroke="#e3e9f4"/>
+      <text x="14" y="25" font-size="14" font-weight="600" fill="#0b1b3a">React dashboard</text>
+      <text x="14" y="45" font-size="12.5" fill="#5a6782">Hebrew, RTL · live "found today" line</text>
+    </g>
+    <g transform="translate(20,124)">
+      <rect width="602" height="52" rx="10" fill="#fdf6e9" stroke="#efdfc0"/>
+      <text x="14" y="22" font-size="13" font-weight="600" fill="#8a6d1f">Planned · WhatsApp alerts for strong new matches, then deployment to a VPS</text>
+      <text x="14" y="40" font-size="12" fill="#9a7d33">The laptop only scans while awake — the one limitation a server removes</text>
+    </g>
+  </g>
+
+  <!-- ══ 9. SECURITY ══ -->
+  <g transform="translate(742,730)">
+    <rect width="642" height="196" rx="16" fill="#ffffff" stroke="#dfe5f0" filter="url(#card)"/>
+    <text x="20" y="32" font-size="13" font-weight="700" fill="#8b95a8" letter-spacing="1">9 · SECURITY — THE CRAWLER READS HOSTILE HTML ALL DAY</text>
+
+    <g transform="translate(20,46)">
+      <rect width="290" height="52" rx="10" fill="#eef3ff" stroke="#c9d8f7"/>
+      <text x="14" y="22" font-size="13" font-weight="600" fill="#3b6fd4">Chromium sandbox on, non-root</text>
+      <text x="14" y="40" font-size="12" fill="#31405c">an exploited page stays inside the container</text>
+    </g>
+    <g transform="translate(332,46)">
+      <rect width="290" height="52" rx="10" fill="#eef3ff" stroke="#c9d8f7"/>
+      <text x="14" y="22" font-size="13" font-weight="600" fill="#3b6fd4">SSRF guard</text>
+      <text x="14" y="40" font-size="12" fill="#31405c">no loopback, private or metadata addresses</text>
+    </g>
+    <g transform="translate(20,110)">
+      <rect width="290" height="52" rx="10" fill="#eef3ff" stroke="#c9d8f7"/>
+      <text x="14" y="22" font-size="13" font-weight="600" fill="#3b6fd4">Link schemes filtered</text>
+      <text x="14" y="40" font-size="12" fill="#31405c">a "javascript:" URL never reaches an href</text>
+    </g>
+    <g transform="translate(332,110)">
+      <rect width="290" height="52" rx="10" fill="#eef3ff" stroke="#c9d8f7"/>
+      <text x="14" y="22" font-size="13" font-weight="600" fill="#3b6fd4">Feeds read, never executed</text>
+      <text x="14" y="40" font-size="12" fill="#31405c">same-site JSON only, size-capped</text>
+    </g>
+    <text x="20" y="182" font-size="12" fill="#8b95a8">pip-audit: no known vulnerabilities in application dependencies · auth ready, off while bound to localhost</text>
+  </g>
+
+  <text x="56" y="958" font-size="12" fill="#8b95a8">Python 3.12 · FastAPI · SQLAlchemy 2 · Alembic · Celery · PostgreSQL 16 + pgvector · Redis · Playwright · fastembed · React + TypeScript · Docker</text>
+</svg>

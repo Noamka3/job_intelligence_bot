@@ -13,7 +13,7 @@ from celery.signals import worker_process_init
 
 from app.core.config import get_settings
 from app.db.session import dispose_engine_after_fork
-from app.services.scheduler_state import CRAWL_QUEUE, SCHEDULER_QUEUE
+from app.services.scheduler_state import CRAWL_QUEUE, SCHEDULER_QUEUE, reset_client_after_fork
 
 settings = get_settings()
 
@@ -51,5 +51,6 @@ celery_app.conf.update(
 
 
 @worker_process_init.connect
-def _reset_db_pool_in_child(**_: object) -> None:
+def _reset_pools_in_child(**_: object) -> None:
     dispose_engine_after_fork()
+    reset_client_after_fork()

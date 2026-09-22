@@ -67,6 +67,13 @@ _COMEET_BOARD_LINK_RE = re.compile(
     rf"https?://(?:www\.)?comeet\.com/jobs/({_SLUG})/({_COMEET_UID})(?![A-Za-z0-9])"
 )
 _COMEET_INIT_UID_RE = re.compile(rf"[\"']company-uid[\"']\s*:\s*[\"']({_COMEET_UID})[\"']")
+# Comeet's own API, as the page calls it from JavaScript (biocatch's
+# careers page paints its own cards from this and mentions Comeet
+# nowhere in the HTML). The uid is lower-cased in the path, so this one
+# pattern matches case-insensitively.
+_COMEET_API_RE = re.compile(
+    rf"comeet\.co/careers-api/[\d.]+/company/({_COMEET_UID})/positions", re.I
+)
 _GREENHOUSE_EMBED_RE = re.compile(
     rf"boards\.greenhouse\.io/embed/job_board(?:/js)?\?(?:[^\"'\s]*?&)?for=({_SLUG})"
 )
@@ -268,6 +275,28 @@ def _workday_board(url: str) -> ResolvedSource | None:
     )
 
 
+def board_behind_page(request_urls: list[str], page_url: str) -> ResolvedSource | None:
+    """The ATS board a rendered page turned out to be a front for, from
+    the URLs its own scripts requested.
+
+    A page can hide its board completely from the HTML and still call the
+    ATS from JavaScript - biocatch's careers page draws its own cards but
+    fetches them from Comeet's positions endpoint. Recognising the call
+    turns the page into a first-class board source, read by the adapter
+    that already handles that ATS properly, instead of a scraped
+    rendering. Same matching (and the same "only if its API answers"
+    verification) as a board referenced in the HTML.
+    """
+    board = _detect_embedded_ats("\n".join(request_urls))
+    if board is None:
+        return None
+    if board.source_type == CareerSourceType.COMEET and board.board_url is None:
+        # The call carries the company uid but not the token the adapter
+        # needs, so it has to read them off the public board instead.
+        return _verified_comeet_board(page_url, board.external_identifier or "")
+    return board
+
+
 def _detect_embedded_ats(body: str) -> ResolvedSource | None:
     # Boards referenced from inline JSON come with escaped slashes
     # ("https:\/\/job-boards.greenhouse.io\/similarweb\/jobs\/1").
@@ -289,6 +318,10 @@ def _embedded_boards(text: str) -> Iterator[ResolvedSource]:
         # COMEET.init({"token": ..., "company-uid": ...}) on the company's
         # own page - the adapter reads both from that page (no board_url).
         yield ResolvedSource(CareerSourceType.COMEET, init.group(1))
+    if api := _COMEET_API_RE.search(text):
+        # Only the uid is in the call, not the token the adapter needs,
+        # so the public board for that uid is what gets crawled.
+        yield ResolvedSource(CareerSourceType.COMEET, api.group(1).upper())
 
     embed = _GREENHOUSE_EMBED_RE.search(text)
     board = embed or _first_board(_GREENHOUSE_BOARD_RE, text)

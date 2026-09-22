@@ -14,6 +14,7 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import timedelta
+from typing import Any
 
 import httpx
 from sqlalchemy import case, select
@@ -22,6 +23,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.timezone import utc_now
 from app.ingestion.adapters.base import (
+    BoardBehindPage,
     JobDetails,
     JobSourceAdapter,
     JobStub,
@@ -115,6 +117,16 @@ def crawl_source(
 
     try:
         stubs = _first_of_each_id(adapter.list_jobs(source))
+    except BoardBehindPage as found:
+        # The page is a front for a real ATS board. Point the source at
+        # it and let this crawl end: the next one runs the board's own
+        # adapter, which reads it properly instead of scraping a render.
+        _repoint_to_board(source, found.board)
+        run.status = CrawlRunStatus.SUCCESS
+        run.finished_at = utc_now()
+        source.last_attempt_at = utc_now()
+        db.commit()
+        return run
     except Exception as exc:  # noqa: BLE001 - one broken source must never crash the crawler (spec §34)
         logger.warning(
             "crawl failed while listing jobs",
@@ -285,6 +297,26 @@ def _plain_reader_kept_finding_nothing(db: Session, source: CareerSource) -> boo
         .all()
     )
     return len(seen) == earlier and not any(seen)
+
+
+def _repoint_to_board(source: CareerSource, board: Any) -> None:
+    """Turn a scraped page into the board it was fronting (a
+    resolver.ResolvedSource, already verified against that ATS's API)."""
+    source.source_type = board.source_type
+    source.external_identifier = board.external_identifier
+    if board.board_url:
+        source.source_url = board.board_url
+    source.poll_interval_minutes = default_poll_minutes(board.source_type)
+    source.consecutive_failures = 0
+    source.next_check_at = None
+    logger.info(
+        "page is a front for a board; source re-pointed",
+        extra={
+            "source_id": source.id,
+            "source_type": board.source_type.value,
+            "identifier": board.external_identifier,
+        },
+    )
 
 
 def _hand_to_browser(source: CareerSource, reason: str) -> None:
