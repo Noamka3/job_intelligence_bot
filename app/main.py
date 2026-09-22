@@ -19,6 +19,7 @@ from app.api.routes.sources import router as sources_router
 from app.api.routes.sync import router as sync_router
 from app.api.routes.target_roles import router as target_roles_router
 from app.core.logging import configure_logging
+from app.core.security import AccessControlMiddleware
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -28,6 +29,11 @@ app = FastAPI(
     description="Monitors company career pages, matches jobs against a CV and target roles.",
     version="0.1.0",
 )
+# Adds the hardening headers to every response, and requires HTTP Basic
+# credentials when DASHBOARD_PASSWORD is set (off by default - see
+# app/core/security.py). No CORS middleware on purpose: the dashboard is
+# served from this same origin, so no other site may call this API.
+app.add_middleware(AccessControlMiddleware)
 
 app.include_router(health_router)
 app.include_router(candidate_router)

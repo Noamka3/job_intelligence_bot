@@ -92,6 +92,14 @@ class Settings(BaseSettings):
     ollama_timeout_seconds: int = 300
     openai_chat_model: str = "gpt-5.4-mini"
 
+    # --- Access control (app/core/security.py) ---
+    # Empty password = no authentication, which is what a tool bound to
+    # 127.0.0.1 needs. Set both before the dashboard is reachable from
+    # anywhere else; Basic auth sends the password on every request, so
+    # only over HTTPS or a private network (Tailscale).
+    dashboard_user: str = "bot"
+    dashboard_password: str = ""
+
     # --- Display / scheduling defaults ---
     default_timezone: str = "Asia/Jerusalem"
     default_poll_minutes: int = 5

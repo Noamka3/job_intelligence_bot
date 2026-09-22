@@ -30,6 +30,7 @@ from urllib.parse import ParseResult, parse_qs, urljoin, urlparse
 
 import httpx
 
+from app.ingestion.adapters._http import BlockedUrlError, ensure_public_url
 from app.ingestion.adapters.generic_html import extract_job_links
 from app.ingestion.adapters.lever import postings_api_base
 from app.models.enums import CareerSourceType
@@ -367,9 +368,10 @@ def _board_answers(board: ResolvedSource) -> bool:
 def _get(url: str) -> httpx.Response | None:
     """The 200 response at url, or None on any failure."""
     try:
+        ensure_public_url(url)
         with httpx.Client(follow_redirects=True, timeout=_PROBE_TIMEOUT_SECONDS) as client:
             response = client.get(url, headers={"User-Agent": _PROBE_USER_AGENT})
-    except (httpx.HTTPError, httpx.InvalidURL):
+    except (httpx.HTTPError, httpx.InvalidURL, BlockedUrlError):
         return None
     return response if response.status_code == 200 else None
 
@@ -409,7 +411,7 @@ def _resolve_comeet_plugin(page_url: str, body: str) -> ResolvedSource | None:
     for link in position_links[:_MAX_POSITION_PROBES]:
         try:
             uid_match = _COMEET_ANY_UID_RE.search(_fetch_capped(link))
-        except (httpx.HTTPError, httpx.InvalidURL):
+        except (httpx.HTTPError, httpx.InvalidURL, BlockedUrlError):
             continue
         if uid_match:
             return _verified_comeet_board(page_url, uid_match.group(1))
@@ -431,7 +433,7 @@ def _resolve_comeet_from_scripts(page_url: str, body: str) -> ResolvedSource | N
     for script in scripts[:_MAX_SCRIPT_PROBES]:
         try:
             js = _fetch_capped(script)
-        except (httpx.HTTPError, httpx.InvalidURL):
+        except (httpx.HTTPError, httpx.InvalidURL, BlockedUrlError):
             continue
         uid_match = _COMEET_ANY_UID_RE.search(js) or _COMEET_API_PATH_RE.search(js)
         if uid_match:
@@ -447,7 +449,7 @@ def _verified_comeet_board(page_url: str, uid: str) -> ResolvedSource | None:
     board_url = f"https://www.comeet.com/jobs/{_domain_label(page_url)}/{uid}"
     try:
         board_html = _fetch_capped(board_url)
-    except (httpx.HTTPError, httpx.InvalidURL):
+    except (httpx.HTTPError, httpx.InvalidURL, BlockedUrlError):
         return None
     if "COMPANY_DATA" in board_html and uid in board_html:
         return ResolvedSource(CareerSourceType.COMEET, uid, board_url=board_url)
@@ -477,7 +479,7 @@ def _probe_page(url: str) -> ResolvedSource:
     """
     try:
         body = _fetch_capped(url)
-    except (httpx.HTTPError, httpx.InvalidURL) as exc:
+    except (httpx.HTTPError, httpx.InvalidURL, BlockedUrlError) as exc:
         # InvalidURL is not an HTTPError subclass - a cell with a stray
         # newline or bad port would otherwise abort the whole sheet sync.
         logger.info(
@@ -534,6 +536,7 @@ def _resolve_wordpress(page_url: str, body: str) -> ResolvedSource | None:
 
 
 def _fetch_capped(url: str) -> str:
+    ensure_public_url(url)
     with (
         httpx.Client(follow_redirects=True, timeout=_PROBE_TIMEOUT_SECONDS) as client,
         client.stream("GET", url, headers={"User-Agent": _PROBE_USER_AGENT}) as response,

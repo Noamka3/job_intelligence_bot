@@ -20,7 +20,11 @@ ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 COPY pyproject.toml ./
 COPY app ./app
 
-RUN pip install --no-cache-dir -e .
+# pip itself is upgraded first: the version bundled with the base image
+# is old enough to carry its own advisories (`pip-audit` flags it), and
+# it is the one tool here that executes code from the network.
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -e .
 
 # The browser fallback (app/ingestion/adapters/browser.py) renders
 # JS-only career pages in headless Chromium. The browser and its system

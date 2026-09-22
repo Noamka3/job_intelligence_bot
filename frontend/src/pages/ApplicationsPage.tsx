@@ -9,6 +9,7 @@ import {
   APPLICATION_STATUS_LABELS,
   APPLICATION_STATUS_ORDER,
   CLOSED_APPLICATION_STATUSES,
+  externalHref,
   formatDate,
   relativeTime,
 } from "../lib/format";
@@ -195,14 +196,16 @@ function ApplicationCard({
           </select>
         </label>
         <span className="faint">עודכן {relativeTime(application.updated_at)}</span>
-        <a
-          className="btn btn--small btn--ghost"
-          href={application.apply_url ?? application.source_url}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          למשרה באתר ↗
-        </a>
+        {externalHref(application.apply_url ?? application.source_url) && (
+          <a
+            className="btn btn--small btn--ghost"
+            href={externalHref(application.apply_url ?? application.source_url) ?? undefined}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            למשרה באתר ↗
+          </a>
+        )}
       </div>
     </article>
   );

@@ -8,10 +8,15 @@ services:
       POSTGRES_PASSWORD: job_bot
       POSTGRES_DB: job_bot
     ports:
+      # Bound to 127.0.0.1, not every interface: Docker's default
+      # publishes a port to the whole network (and punches through the
+      # host firewall), which would put a database whose password is
+      # "job_bot" on the LAN. Only this machine needs it - the worker and
+      # beat reach Postgres over the compose network instead.
       # Host port 5544 (not 5432): this machine already has a native
       # Windows Postgres service and another project's Postgres container
       # bound to 5432/5433. Avoids colliding with either.
-      - "5544:5432"
+      - "127.0.0.1:5544:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -25,9 +30,11 @@ services:
     container_name: job_bot_redis
     restart: unless-stopped
     ports:
+      # 127.0.0.1 for the same reason as Postgres above - Redis has no
+      # password at all, so it must never be reachable off this machine.
       # Host port 6380 (not 6379): another project's Redis container
       # already holds 6379 on this machine.
-      - "6380:6379"
+      - "127.0.0.1:6380:6379"
     volumes:
       - redisdata:/data
     healthcheck:

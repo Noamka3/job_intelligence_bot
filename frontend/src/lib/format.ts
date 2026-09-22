@@ -24,6 +24,19 @@ export function relativeTime(iso: string | null | undefined): string {
   return relative.format(Math.round(diffSeconds / (86400 * 365)), "year");
 }
 
+/** A URL we are willing to put in an href, or null. Job links are read
+ * off third-party career pages, and a "javascript:" one would run in this
+ * dashboard's own origin; only http(s) is ever linked. */
+export function externalHref(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url, window.location.origin);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.href : null;
+  } catch {
+    return null;
+  }
+}
+
 export const formatDateTime = (iso: string | null | undefined) =>
   iso ? dateTime.format(new Date(iso)) : "";
 export const formatDate = (iso: string | null | undefined) =>

@@ -19,7 +19,7 @@ import threading
 
 import httpx
 
-from app.ingestion.adapters._http import _BROWSER_HEADERS
+from app.ingestion.adapters._http import _BROWSER_HEADERS, ensure_public_url
 from app.ingestion.adapters.base import JobDetails, JobStub, JobUnavailableError
 from app.ingestion.adapters.generic_html import (
     GenericHtmlAdapter,
@@ -67,8 +67,12 @@ def render(url: str) -> tuple[str, str]:
     from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
     from playwright.sync_api import sync_playwright
 
+    ensure_public_url(url)
     with _RENDER_LOCK, sync_playwright() as playwright:
-        browser = playwright.chromium.launch(args=["--disable-gpu", "--no-sandbox"])
+        # Chromium's own sandbox stays on: this renders untrusted pages,
+        # and it is the layer between a browser exploit and the worker.
+        # It works because the image runs as a non-root user (Dockerfile).
+        browser = playwright.chromium.launch(args=["--disable-gpu"])
         try:
             page = browser.new_page(user_agent=_BROWSER_HEADERS["User-Agent"], locale="he-IL")
             page.route(

@@ -16,12 +16,31 @@ Deliberately smaller than the spec's illustrative sketch in two ways:
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Protocol
+from typing import Annotated, Any, Protocol
+from urllib.parse import urlparse
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, BeforeValidator, ConfigDict
 
 from app.models.career_source import CareerSource
 from app.models.enums import EmploymentType, RemoteType
+
+
+def _drop_unsafe_scheme(value: Any) -> Any:
+    """Apply links are read off third-party pages and feeds, and the
+    dashboard renders them as real links. A "javascript:" or "data:" one
+    would run in the dashboard's own origin, so it is dropped here rather
+    than stored. Anything that isn't an absolute http(s) URL (a relative
+    path, a blank) is left alone: harmless, and the UI decides whether it
+    can be linked (frontend/src/lib/format.ts externalHref)."""
+    if isinstance(value, str) and ":" in value:
+        scheme = urlparse(value).scheme.lower()
+        if scheme and scheme not in ("http", "https"):
+            return None
+    return value
+
+
+# An optional URL that will end up in an href.
+LinkUrl = Annotated[str | None, BeforeValidator(_drop_unsafe_scheme)]
 
 
 class JobStub(BaseModel):
@@ -36,7 +55,7 @@ class JobStub(BaseModel):
     title: str
     location_text: str | None = None
     source_url: str
-    apply_url: str | None = None
+    apply_url: LinkUrl = None
     source_updated_at: datetime | None = None
     # Set when the adapter's list call already returned full detail
     # (Lever/Ashby/Comeet all do) so fetch_job can reuse it instead of a
@@ -60,7 +79,7 @@ class JobDetails(BaseModel):
     required_skills: list[str] = []
     preferred_skills: list[str] = []
     source_url: str
-    apply_url: str | None = None
+    apply_url: LinkUrl = None
     source_published_at: datetime | None = None
     source_updated_at: datetime | None = None
 

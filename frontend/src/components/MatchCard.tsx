@@ -5,6 +5,7 @@ import {
   DISMISSING_FEEDBACK,
   SENIORITY_FIT_LABELS,
   SOURCE_LABELS,
+  externalHref,
   formatDate,
   relativeTime,
   seniorityFitDetail,
@@ -33,6 +34,7 @@ export function MatchCard({
     }
   }
 
+  const applyHref = externalHref(match.apply_url);
   const postedAt = match.source_published_at ?? match.first_seen_at;
   const posted = match.source_published_at
     ? `פורסמה ${relativeTime(postedAt)}`
@@ -88,10 +90,10 @@ export function MatchCard({
           <Link to={`/jobs/${match.job_id}`} className="btn btn--small">
             פרטים
           </Link>
-          {match.apply_url && (
+          {applyHref && (
             <a
               className="btn btn--small btn--primary"
-              href={match.apply_url}
+              href={applyHref}
               target="_blank"
               rel="noopener noreferrer"
             >

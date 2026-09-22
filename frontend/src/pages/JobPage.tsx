@@ -6,7 +6,14 @@ import { CompanyTag } from "../components/CompanyTag";
 import { FeedbackButtons } from "../components/FeedbackButtons";
 import { Pill, ScoreBadge, Skeletons } from "../components/ui";
 import { useAsync } from "../hooks/useAsync";
-import { COMPONENT_LABELS, SOURCE_LABELS, formatDate, relativeTime, scoreTone } from "../lib/format";
+import {
+  COMPONENT_LABELS,
+  SOURCE_LABELS,
+  externalHref,
+  formatDate,
+  relativeTime,
+  scoreTone,
+} from "../lib/format";
 
 const EMPLOYMENT: Record<string, string> = {
   full_time: "משרה מלאה",
@@ -85,19 +92,26 @@ export function JobPage() {
           </div>
         </div>
         <div className="row">
-          {j.apply_url && (
+          {externalHref(j.apply_url) && (
             <a
               className="btn btn--primary"
-              href={j.apply_url}
+              href={externalHref(j.apply_url) ?? undefined}
               target="_blank"
               rel="noopener noreferrer"
             >
               להגשה ↗
             </a>
           )}
-          <a className="btn btn--ghost" href={j.source_url} target="_blank" rel="noopener noreferrer">
-            למקור
-          </a>
+          {externalHref(j.source_url) && (
+            <a
+              className="btn btn--ghost"
+              href={externalHref(j.source_url) ?? undefined}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              למקור
+            </a>
+          )}
         </div>
       </header>
 

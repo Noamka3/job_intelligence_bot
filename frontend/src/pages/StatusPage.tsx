@@ -6,6 +6,7 @@ import {
   RUN_STATUS_LABELS,
   SOURCE_LABELS,
   countdown,
+  externalHref,
   formatDateTime,
   relativeTime,
 } from "../lib/format";
@@ -151,7 +152,11 @@ export function StatusPage() {
                 {s.failing_sources.map((row) => (
                   <tr key={row.source_url}>
                     <td className="bidi">
-                      <a href={row.source_url} target="_blank" rel="noopener noreferrer">
+                      <a
+                        href={externalHref(row.source_url) ?? undefined}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
                         {row.company_name}
                       </a>
                     </td>
