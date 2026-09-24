@@ -1,4 +1,4 @@
-"""TargetRole CRUD + its own embedding (spec §7: role *intent* is embedded
+"""TargetRole CRUD + its own embedding (role *intent* is embedded
 separately from the candidate's CV, since a CV can span several domains
 even when the current search is narrowly scoped).
 """
@@ -79,7 +79,3 @@ def update_target_role(
 
 def list_target_roles(db: Session) -> list[TargetRole]:
     return list(db.execute(select(TargetRole).order_by(TargetRole.canonical_name)).scalars())
-
-
-def get_target_role(db: Session, role_id: int) -> TargetRole | None:
-    return db.get(TargetRole, role_id)

@@ -1,4 +1,4 @@
-"""Celery application + beat schedule (spec §19/§46 Phase 6).
+"""Celery application + beat schedule.
 
 The worker and beat scheduler run inside Docker (Linux) containers, not
 directly on the Windows host - Celery's default prefork pool doesn't work

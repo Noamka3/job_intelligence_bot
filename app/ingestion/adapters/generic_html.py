@@ -1,4 +1,4 @@
-"""Generic career-page adapter (spec §17): no API, no known ATS, a plain
+"""Generic career-page adapter: no API, no known ATS, a plain
 page listing jobs as links to their own pages. The last resort before a
 real browser.
 
@@ -13,7 +13,7 @@ name a role are kept too.
 A job page is read through its schema.org JobPosting JSON-LD when it has
 one (many do, for Google for Jobs), else <h1>/og:title for the title and
 the main content block for the description. Location is left unknown
-when the page doesn't say - never guessed (spec §22).
+when the page doesn't say - never guessed.
 
 Surveyed against the sheet's ~130 such pages (docs/job_sources.md): 59
 render 5+ job links server-side; JS-rendered ones and WAF-blocked ones
@@ -316,7 +316,7 @@ def _guess_location(text: str) -> str | None:
     """Job pages without structured data usually print the location as a
     short line of its own near the top ("Remote US", "Rishon LeZion",
     "Tel Aviv, Israel"); only a line the location vocabulary recognizes
-    is used - never a guess from prose (spec §22)."""
+    is used - never a guess from prose."""
     for line in text.split("\n")[:_LOCATION_SCAN_LINES]:
         candidate = line.strip()
         if not candidate or len(candidate) > 60:

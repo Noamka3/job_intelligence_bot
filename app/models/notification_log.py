@@ -13,7 +13,7 @@ class NotificationLog(Base):
     """Record of every notification actually sent.
 
     dedup_key (e.g. f"{job_id}:{channel}") is unique so the same job can
-    never trigger the same channel twice - see spec §30.
+    never trigger the same channel twice.
     """
 
     __tablename__ = "notification_logs"

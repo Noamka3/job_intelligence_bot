@@ -1,13 +1,13 @@
 """Comeet public Careers API - verified live against real companies from
-the sheet (Cymotive, Tango) during Phase 4 development; see
+the sheet (Cymotive, Tango); see
 docs/job_sources.md for the exact findings, which differ from generic
 documentation summaries in one important way: the positions endpoint
 requires a `token` that is NOT present in the public jobs page URL - it is
 embedded in a `COMPANY_DATA` JS variable inside that page's HTML. This
 adapter fetches that page once per source to recover company_uid + token
-rather than trusting URL path segments for it (per spec §14, "verify the
-real response format" - a generic web search summary described a
-token-based API but not where the token actually comes from).
+rather than trusting URL path segments for it (a generic web search
+summary described a token-based API but not where the token actually
+comes from - always verify the real response format).
 """
 
 from __future__ import annotations
@@ -98,7 +98,7 @@ class ComeetAdapter:
         location = data.get("location") or {}
         # Comeet already segments the description into named parts - a
         # nicer starting point than the single HTML blob most other ATSes
-        # return (spec §11 wants responsibilities/qualifications split out
+        # return (responsibilities/qualifications are kept split out
         # where the source actually provides that split).
         sections = [
             (str(section.get("name", "")).strip(), html_to_text(section.get("value")))

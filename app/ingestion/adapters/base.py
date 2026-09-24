@@ -3,7 +3,7 @@
 knows whether a job came from Greenhouse, Lever, Ashby, Comeet, or a
 JSON-LD page.
 
-Deliberately smaller than the spec's illustrative sketch in two ways:
+Deliberately smaller than the usual adapter interface in two ways:
 - No `can_handle`: dispatch is a straight CareerSourceType -> adapter
   lookup in the registry (app/ingestion/registry.py), so there's nothing
   for an adapter to introspect.
@@ -46,7 +46,7 @@ LinkUrl = Annotated[str | None, BeforeValidator(_drop_unsafe_scheme)]
 class JobStub(BaseModel):
     """Cheap, list-call-only representation of a job - just enough to
     detect new / changed / missing jobs without fetching full details for
-    everything on every crawl (spec §20).
+    everything on every crawl.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)

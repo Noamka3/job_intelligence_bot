@@ -33,7 +33,7 @@ explaining the score - not embedding similarity numbers).
 | Component | Module | What it measures |
 |---|---|---|
 | `candidate_semantic_score` | `semantic.py` | Cosine similarity: candidate CV embedding vs. job embedding |
-| `intent_semantic_score` | `semantic.py` | Cosine similarity: target role's *own* embedding vs. job embedding - kept separate from the CV per spec §7, since a resume can span domains (e.g. data science + web dev) even when the current search is narrowly scoped |
+| `intent_semantic_score` | `semantic.py` | Cosine similarity: target role's *own* embedding vs. job embedding - kept separate from the CV on purpose, since a resume can span domains (e.g. data science + web dev) even when the current search is narrowly scoped |
 | `skill_score` | `skills.py` | Fraction of the job's mentioned skills (extracted via a canonical alias vocabulary on word boundaries, not substring search) the candidate demonstrably has. Aliases that are also ordinary words ("Go", "React", "Spring") only count in a technical context - a list item, "Go developer", "experience with Go" - after a real posting's "go-to-market", "send your CV", "the rest of the team" and "jobs@company.net" produced four bogus skills and a "go experience requested" concern |
 | `role_score` | `role_score.py` | Title/department match against the target role's canonical name, aliases, and positive/negative keywords - whole-word ("java" doesn't credit "JavaScript"), and negatives are checked *before* aliases, since "Senior Software Engineer" contains the alias "Software Engineer" too |
 | `seniority_score` | `seniority.py` | Title-based seniority detection first (most reliable; English and Hebrew tokens, "Engineer I"/"Engineer 1", "Student"), years-of-experience text second; body text alone (e.g. "work closely with senior engineers") never triggers a senior flag. Years are read from the requirements section only when the description has a recognizable one ("Requirements", "What you'll bring", "דרישות"...), so "with over 15 years in cybersecurity, Acme..." in the intro doesn't count; with several requirements the largest stated minimum wins ("5+ years backend, 1-2 years Kubernetes" -> 5), and anything above 15 is treated as a company blurb |
@@ -42,8 +42,8 @@ explaining the score - not embedding similarity numbers).
 
 `reasons`/`concerns` are built from whichever components cleared a
 threshold (>= 0.7 for reasons, <= 0.3 for concerns) plus every matched/
-missing skill - not raw embedding scores, matching spec §8's explicit
-"do not use embedding similarity itself as the user-facing percentage."
+missing skill - not raw embedding scores: embedding similarity itself is
+never shown as the user-facing percentage.
 
 ## Matching v2: the role gate and calibrated similarity
 
@@ -130,7 +130,7 @@ above the ceiling), `student` (an internship or student position),
 mandatory" under a junior-looking title is a requirement - and the same
 order drives the seniority score. The dashboard shows the fit as a tag on
 every card and filters on it; the default view hides `experienced` and
-`student`. Noam's role ceiling is 1 year.
+`student`. The configured role ceiling is 1 year.
 
 A student title ("Student Software Engineer", "סטודנט/ית לפיתוח
 תוכנה") is read as `INTERN`, not `JUNIOR`, and being a student
@@ -147,38 +147,38 @@ improved they took over the top of the list. They are tagged
   requirements at the end of a posting count. `python -m app.cli reembed`
   recomputes every stored vector and rescores after such a change.
 
-## Weights - and why they differ from the spec's suggested starting point
+## Weights - and why they differ from the starting point
 
-The spec suggested 30/20/20/10/10/5/5
+The first version used 30/20/20/10/10/5/5
 (candidate-semantic/intent-semantic/skills/role/seniority/location/
 recency) as "a reasonable initial configuration" while explicitly saying
 not to use it blindly if analysis suggests otherwise. Verified against
 real embeddings in `tests/integration/test_matching_scenarios.py` (the
-spec's own §43 examples): the local embedding model's raw cosine
+acceptance examples): the local embedding model's raw cosine
 similarity barely distinguishes "Junior Backend Engineer" from "Senior
 Backend Engineer" for the *same* tech stack - both landed around
-0.43-0.54. That's exactly the failure mode spec §8 itself warns about
-("semantic similarity... can rank Senior Backend Engineer very highly...
-because the technology and responsibilities are semantically similar").
+0.43-0.54. That's exactly the failure mode to design against: semantic
+similarity ranks a Senior Backend Engineer very highly because the
+technology and responsibilities are semantically similar.
 
 At a 10% weight, seniority's own signal - which fires correctly and
 confidently (1.0 for a junior title, 0.05 for a senior one) - couldn't
 overcome that. The weights actually in use:
 
-| Component | Spec's suggestion | In use (v2) | Why |
+| Component | First version | In use (v2) | Why |
 |---|---|---|---|
 | role | 10% | the **gate** (x0.2 … x1.0) | "Is this the role at all" isn't one signal among seven - it decides whether the others count |
-| seniority | 10% | 45% of quality | The component that actually solves spec §43's examples |
+| seniority | 10% | 45% of quality | The component that actually separates junior from senior |
 | skills | 20% | 30% of quality | A real, reliable signal |
 | candidate_semantic | 30% | 12% of quality, calibrated | Raw similarity spans only 0.15-0.55 and doesn't discriminate on seniority |
 | intent_semantic | 20% | 8% of quality, calibrated (also feeds the gate) | Same limitation; useful as a backstop for unlisted titles |
 | location | 5% | 3% | Israel-only filtering already happens at the API layer, so this is a tiebreaker |
-| recency | 5% | 2% | Per spec §27, must never dominate relevance |
+| recency | 5% | 2% | Must never dominate relevance |
 
 The six quality weights sum to 1.0 (enforced by `InvalidWeightsError` in
 `scoring.py`), and every weight, the gate floor and the calibration
-bounds are env vars - the spec's "make weights configurable"
-requirement, not a hardcoded choice bolted on for these test cases.
+bounds are env vars, not a hardcoded choice bolted on for these test
+cases.
 
 ## When scores are (re)computed
 
@@ -207,12 +207,12 @@ running `python -m app.cli reembed`.
 
 ## Not yet built (later phases)
 
-- **Hard constraints** (spec's pipeline diagram shows this as the first
-  stage) - not implemented as a separate pre-filter yet; low scores serve
+- **Hard constraints** as a separate first stage - not implemented as a
+  pre-filter yet; low scores serve
   that purpose today (e.g. a confidently-senior job still gets a
   `JobMatch` row, just a low one). A future pass could exclude egregious
   mismatches outright rather than merely scoring them low.
-- **Optional LLM reranking** (spec §26) - deliberately not built. Given
+- **Optional LLM reranking** - deliberately not built. Given
   the local-LLM performance findings during Phase 2 (CPU-only inference
   took minutes per call and once destabilized the whole machine - see
   README's "Local LLM performance" entry), reranking every

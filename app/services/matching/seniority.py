@@ -1,4 +1,4 @@
-"""Seniority detection and scoring (spec §9).
+"""Seniority detection and scoring.
 
 Title is the strongest, most reliable signal - a senior/junior word
 appearing only in body text ("work closely with senior engineers") must
@@ -71,7 +71,7 @@ _JUNIOR_TITLE_TOKENS: tuple[tuple[str, SeniorityLevel], ...] = (
 )
 
 # "Software Engineer I" / "Software Engineer 1" - a well-known entry-tier
-# title convention (also the spec's own example). Deliberately only
+# title convention. Deliberately only
 # matches a trailing " I"/" 1", never "II"/"III"/"IV"/"11" (those read as
 # progressively senior, not junior).
 _ROMAN_ONE_SUFFIX = re.compile(r"(?<![I\d])\b(?:I|1)\b\s*$")
@@ -279,7 +279,7 @@ def assess_seniority(title: str, requirements_text: str | None) -> SeniorityAsse
     """requirements_text is ideally qualifications/requirements copy; a
     whole description is acceptable - extract_min_years_required narrows
     it to the requirements section itself where it can - but the title is
-    the only thing senior/junior *words* are read from: spec §9's
+    the only thing senior/junior *words* are read from: the classic
     counter-example ("work closely with senior engineers") is exactly the
     kind of unrelated sentence a description contains.
     """
@@ -327,8 +327,8 @@ def score_seniority(
     """(score in [0,1], human-readable explanation). max_expected_years
     comes from the TargetRole being scored against.
 
-    A title-level senior signal is a strong penalty on its own (spec §9:
-    "title = Senior Software Engineer -> strong penalty or exclusion"),
+    A title-level senior signal is a strong penalty on its own (a "Senior
+    Software Engineer" title is a strong penalty or an exclusion),
     independent of whether explicit years-of-experience text exists.
     """
     if assessment.level in _STRONGLY_SENIOR_LEVELS:

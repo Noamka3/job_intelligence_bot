@@ -1,11 +1,10 @@
 """Crawls one CareerSource: discovers new / changed / missing jobs and
 persists them, scoring each new/changed job against the active candidate
-profile right away (Phase 5's matching engine - cheap, no LLM calls, so
+profile right away (the matching engine is cheap, no LLM calls, so
 there's no reason to defer it to a separate manual step). This is the
-core loop spec §20 (incremental ingestion), §23 (closure detection), and
-§33 (observability via CrawlRun) describe - plain business logic,
-callable from the CLI/API and from the Celery tasks in app/tasks/
-(Phase 6) without change.
+core loop - incremental ingestion, closure detection, observability via
+CrawlRun - as plain business logic, callable from the CLI/API and from
+the Celery tasks in app/tasks/ without change.
 """
 
 from __future__ import annotations
@@ -62,8 +61,8 @@ _EMPTY_CRAWLS_BEFORE_BROWSER = 3
 
 def get_due_sources(db: Session, limit: int | None = None) -> list[CareerSource]:
     """Enabled sources that have never been crawled, or are past their own
-    next_check_at - the dispatch query Celery Beat uses every 5 minutes
-    (spec §19), reused by the CLI/API manual trigger so it behaves
+    next_check_at - the dispatch query Celery Beat uses every 5 minutes,
+    reused by the CLI/API manual trigger so it behaves
     identically. Longest-overdue first (never crawled before anything
     else), so a `limit` hands out the backlog fairly across ticks.
 
@@ -127,7 +126,7 @@ def crawl_source(
         source.last_attempt_at = utc_now()
         db.commit()
         return run
-    except Exception as exc:  # noqa: BLE001 - one broken source must never crash the crawler (spec §34)
+    except Exception as exc:  # noqa: BLE001 - one broken source must never crash the crawler
         logger.warning(
             "crawl failed while listing jobs",
             extra={"source_id": source.id, "error_type": type(exc).__name__},
@@ -189,7 +188,7 @@ def crawl_source(
                     unavailable_closed += 1
                     db.commit()
                 continue
-            except Exception as exc:  # noqa: BLE001 - one broken job must not sink the rest of the listing (spec §34)
+            except Exception as exc:  # noqa: BLE001 - one broken job must not sink the rest of the listing
                 logger.warning(
                     "skipping job: fetch/embed failed",
                     extra={
@@ -215,8 +214,8 @@ def crawl_source(
                 if _apply_update(existing, fetched):
                     updated += 1
                     # Only rescore when the content actually changed enough
-                    # to re-embed (spec §45: never re-run matching on
-                    # unchanged jobs).
+                    # to re-embed - never re-run matching on unchanged
+                    # jobs.
                     score_job(db, existing)
             db.commit()
     except Exception as exc:
@@ -480,7 +479,7 @@ def _apply_update(existing: JobPosting, fetched: _FetchedJob) -> bool:
 def _close_missing_jobs(existing_jobs: dict[str, JobPosting], seen_external_ids: set[str]) -> int:
     """A job absent from this listing is not immediately closed - it must
     stay absent across JOB_MISSING_THRESHOLD consecutive successful crawls
-    first (spec §23), since a source can omit a job in one crawl by
+    first, since a source can omit a job in one crawl by
     accident (pagination hiccup, transient filtering) without it actually
     having closed.
     """

@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 @celery_app.task(name="app.tasks.crawlers.dispatch_due_sources")
 def dispatch_due_sources() -> int:
-    """Runs every DEFAULT_POLL_MINUTES via Celery Beat (spec §19).
+    """Runs every DEFAULT_POLL_MINUTES via Celery Beat.
     Enqueues one crawl_one_source task per due source rather than
     crawling them inline, so a slow source can't delay the others and
     each gets Celery's own retry semantics on top of the per-source
@@ -78,7 +78,7 @@ def crawl_one_source(source_id: int) -> None:
     (e.g. a DB hiccup) - the routine case (a source's HTTP call failing)
     is already handled without raising inside crawl_source, which records
     a FAILED CrawlRun and backs off that source's own next_check_at
-    instead (spec §34).
+    instead.
     """
     session_factory = get_session_factory()
     embedding_provider = get_embedding_provider()

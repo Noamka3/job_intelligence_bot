@@ -1,7 +1,7 @@
 """Reads company rows from the configured Google Sheet.
 
 The sheet tab is resolved by gid (its stable sheetId), never by an
-assumed tab name/title - per spec §2/§38, the title can change without
+assumed tab name/title - the title can change without
 warning.
 """
 

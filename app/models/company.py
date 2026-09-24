@@ -20,7 +20,6 @@ class Company(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     normalized_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     original_sheet_url: Mapped[str | None] = mapped_column(String(2048))
-    canonical_career_url: Mapped[str | None] = mapped_column(String(2048))
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     career_sources: Mapped[list[CareerSource]] = relationship(

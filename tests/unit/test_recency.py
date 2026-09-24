@@ -21,6 +21,6 @@ def test_score_recency_decays_with_age() -> None:
 
     assert fresh > three_days > one_week > two_weeks > old
     assert fresh == 1.0
-    # Recency must never dominate relevance (spec §27) - even a very old
+    # Recency must never dominate relevance - even a very old
     # job keeps a non-zero floor rather than being zeroed out.
     assert old > 0.0

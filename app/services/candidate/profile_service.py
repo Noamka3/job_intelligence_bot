@@ -1,5 +1,5 @@
 """CandidateProfile lifecycle: ingest a resume, keep exactly one active
-profile, keep prior versions for history. See spec §6.
+profile, keep prior versions for history.
 """
 
 from __future__ import annotations
@@ -208,11 +208,11 @@ def _extract_structured_profile_best_effort(
 ) -> tuple[StructuredCandidateProfile, str | None]:
     """(profile, note for the dashboard - None when the model answered).
 
-    Structured extraction is a secondary signal - spec §6 explicitly
-    says matching must never depend on it alone, raw_text/embedding are
-    what actually matter. So a slow or unavailable LLM (observed on this
-    dev machine: local CPU-only inference can take minutes to hours, and
-    the model times out whenever the 8GB of RAM are tight) must never
+    Structured extraction is a secondary signal - matching must never
+    depend on it alone, raw_text/embedding are what actually matter. So a
+    slow or unavailable LLM (observed on this dev machine: local CPU-only
+    inference can take minutes to hours, and the model times out whenever
+    the 8GB of RAM are tight) must never
     block the resume itself from being saved. The level and the skills
     the vocabulary finds in the text are still filled in by rule, so the
     profile page never shows nothing; the model's lists are retried on

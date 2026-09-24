@@ -1,7 +1,7 @@
 """HTML -> plain text for job descriptions returned by ATS APIs (Greenhouse
 etc. return the description as an HTML blob). Not a general-purpose HTML
-scraper - just strips markup so the text is embeddable, per spec §11
-("do not blindly embed entire noisy HTML pages").
+scraper - just strips markup so the text is embeddable, instead of
+embedding entire noisy HTML pages.
 """
 
 from __future__ import annotations

@@ -27,10 +27,3 @@ def interpret_naive_as_default_timezone(value: datetime) -> datetime:
     if value.tzinfo is not None:
         return value
     return value.replace(tzinfo=ZoneInfo(get_settings().default_timezone))
-
-
-def to_display_timezone(value: datetime, timezone_name: str | None = None) -> datetime:
-    tz_name = timezone_name or get_settings().default_timezone
-    if value.tzinfo is None:
-        value = value.replace(tzinfo=UTC)
-    return value.astimezone(ZoneInfo(tz_name))

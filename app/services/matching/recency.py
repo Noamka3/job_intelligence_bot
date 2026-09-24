@@ -1,4 +1,4 @@
-"""Recency scoring (spec §27): a fresh job gets a small ranking advantage,
+"""Recency scoring: a fresh job gets a small ranking advantage,
 but recency must never dominate relevance - hence a floor well above 0
 rather than a hard cutoff, and a small weight in the overall composite
 (see scoring.py).

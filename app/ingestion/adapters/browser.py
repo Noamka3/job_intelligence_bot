@@ -1,4 +1,4 @@
-"""Browser fallback (spec §17's last resort): a career page whose job
+"""Browser fallback, the last resort: a career page whose job
 list or job pages are drawn by JavaScript is rendered in headless
 Chromium and then read exactly like a plain career page. The crawler
 hands a source here after the plain reader found nothing on it three

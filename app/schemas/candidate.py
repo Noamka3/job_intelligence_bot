@@ -66,7 +66,7 @@ class CandidateProfileLists(BaseModel):
 class StructuredCandidateProfile(CandidateProfileLists):
     """AI-extracted structured view of a CV.
 
-    Matching must never depend on this alone (per spec §6) - raw_text and
+    Matching must never depend on this alone - raw_text and
     normalized_text are always kept and used alongside it.
     """
 

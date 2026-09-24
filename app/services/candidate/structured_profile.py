@@ -1,6 +1,5 @@
 """One-time structured extraction from a normalized CV. Runs once per
-resume upload (a rare event), never in a hot path - see spec §45 cost
-control.
+resume upload (a rare event), never in a hot path.
 
 Two providers, selected by Settings.llm_provider:
 - ollama (default): free, runs on this machine, no API key.
@@ -156,7 +155,7 @@ def _extract_via_openai(
         )
     except (OpenAIError, ValidationError) as exc:
         # Bad key, rate limit, network, or a response that didn't fit the
-        # schema - all secondary to the upload itself (spec §6).
+        # schema - all secondary to the upload itself.
         raise OpenAIExtractionError(exc) from exc
     parsed = completion.choices[0].message.parsed
     if parsed is None:
@@ -224,7 +223,7 @@ def _ollama_json[T: BaseModel](
     except ValidationError as exc:
         # Schema-constrained output is best effort on the model's side: a
         # small local model can still emit a wrong type or truncated JSON.
-        # This step is secondary (spec §6) and must never sink the upload.
+        # This step is secondary and must never sink the upload.
         raise OllamaUnavailableError(base_url, exc) from exc
 
 

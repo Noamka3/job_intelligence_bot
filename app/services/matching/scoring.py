@@ -1,4 +1,4 @@
-"""The hybrid matching engine (spec §8): combines independent component
+"""The hybrid matching engine: combines independent component
 scores into one calibrated 0-100 final score, with an explanation
 (reasons/concerns) for why - never embedding similarity alone, and never
 a black box.
@@ -73,7 +73,7 @@ def candidate_skill_set(candidate: CandidateProfile) -> set[str]:
     for key in ("skills", "programming_languages", "frameworks", "databases", "cloud", "devops"):
         for item in structured.get(key) or []:
             skills.add(normalize_skill(str(item)))
-    # Structured extraction is best-effort (spec §6) and can be empty even
+    # Structured extraction is best-effort and can be empty even
     # for a real CV (observed with local-LLM extraction on constrained
     # hardware) - the raw resume text is the reliable fallback.
     skills |= extract_skills_from_text(candidate.normalized_text)

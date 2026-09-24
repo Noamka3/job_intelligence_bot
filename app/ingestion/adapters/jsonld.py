@@ -1,4 +1,4 @@
-"""Generic schema.org JobPosting JSON-LD adapter (spec §17).
+"""Generic schema.org JobPosting JSON-LD adapter.
 
 Handles the case where a company's career/listing page embeds one or more
 <script type="application/ld+json"> blocks with JobPosting objects

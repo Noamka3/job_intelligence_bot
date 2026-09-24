@@ -1,7 +1,6 @@
 """Turns a JobDetails DTO into the text actually used for embedding +
 matching, plus a content hash used to decide whether a job's embedding
-needs to be regenerated at all (spec §11/§45: never re-embed unchanged
-content).
+needs to be regenerated at all (never re-embed unchanged content).
 """
 
 from __future__ import annotations
@@ -82,7 +81,7 @@ def normalize_job_title(title: str) -> str:
     return " ".join(title.strip().lower().split())
 
 
-# Common Israeli city name variants (spec §28) collapsed to one canonical
+# Common Israeli city name variants collapsed to one canonical
 # form, so "Tel Aviv-Yafo, Israel" and "Tel Aviv" fingerprint/filter
 # identically. Applied as in-place replacements, longest variant first,
 # since real location strings are rarely just the city ("Tel Aviv-Yafo,

@@ -1,4 +1,4 @@
-"""Skill normalization: a canonical vocabulary + alias layer (spec §10).
+"""Skill normalization: a canonical vocabulary + alias layer.
 
 "Node", "NodeJS", "Node.js" must compare equal; matching required/
 preferred skills against a candidate's skills must never be a naive
@@ -151,9 +151,9 @@ def score_skills(
 ) -> tuple[float, list[str], list[str]]:
     """(score in [0,1], matched skills, missing skills). Score is the
     fraction of skills the job actually mentions that the candidate
-    demonstrably has - a job silent on a skill costs nothing (spec §10:
-    differentiate what's actually asked for from what merely isn't
-    mentioned), but a job mentioning ten skills the candidate has none of
+    demonstrably has - a job silent on a skill costs nothing (what is
+    actually asked for is not the same as what merely isn't mentioned),
+    but a job mentioning ten skills the candidate has none of
     scores 0, not neutral.
     """
     if not job_skills:

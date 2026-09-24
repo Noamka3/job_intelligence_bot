@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import Select, case, func, or_, select
+from sqlalchemy import ColumnElement, Select, case, func, literal, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -39,6 +39,39 @@ SeniorityFit = Literal["fit", "unknown", "experienced", "student"]
 SeniorityFilter = Literal["all", "fit", "not_experienced", "student"]
 
 _ENTRY_LEVELS = (SeniorityLevel.JUNIOR,)
+
+# What each filter value hides. A search that names a bucket - "סטודנט",
+# "senior", "product manager" - is an explicit ask for it, so the filter
+# leaves that bucket visible for the query: with student positions out
+# of the default view, "משרת סטודנט" found nothing but the junior jobs
+# its meaning is closest to.
+_HIDDEN_FITS: dict[SeniorityFilter, frozenset[SeniorityFit]] = {
+    "all": frozenset(),
+    "fit": frozenset({"unknown", "experienced", "student"}),
+    "not_experienced": frozenset({"experienced", "student"}),
+    "student": frozenset({"fit", "unknown", "experienced"}),
+}
+_FIT_WORDS: dict[SeniorityFit, tuple[str, ...]] = {
+    "student": ("student", "intern", "סטודנט", "מתמחה", "התמחות"),
+    "experienced": (
+        "senior",
+        "lead",
+        "manager",
+        "principal",
+        "staff",
+        "בכיר",
+        "סניור",
+        "מנהל",
+        "ראש צוות",
+    ),
+}
+
+# Words a search is better off without: they are in no title, and as
+# substrings ("or" in "developer") they would match every job.
+_SEARCH_STOP_WORDS = frozenset(
+    {"a", "an", "and", "at", "for", "in", "of", "on", "or", "the", "to", "with"}
+    | {"של", "עם", "או", "משרת", "משרה", "משרות"}
+)
 _SENIOR_LEVELS = (
     SeniorityLevel.SENIOR,
     SeniorityLevel.STAFF,
@@ -48,6 +81,24 @@ _SENIOR_LEVELS = (
     SeniorityLevel.DIRECTOR,
 )
 _DEFAULT_MAX_EXPECTED_YEARS = 2
+
+
+def hidden_fits(filters: MatchFilters) -> set[SeniorityFit]:
+    """The fit values `filters` hides, minus any the search names."""
+    hidden = set(_HIDDEN_FITS[filters.seniority])
+    query = (filters.query or "").lower()
+    for fit, words in _FIT_WORDS.items():
+        if any(word in query for word in words):
+            hidden.discard(fit)
+    return hidden
+
+
+def search_words(query: str) -> list[str]:
+    """The words of a search worth matching on their own. Each is looked
+    for as a substring, which is what Hebrew needs: "פיתוח" should find
+    "לפיתוח". A query of nothing but stop words is matched whole."""
+    words = [w for w in query.lower().split() if len(w) > 1 and w not in _SEARCH_STOP_WORDS]
+    return words or [query.strip().lower()]
 
 
 def seniority_fit_expression() -> Any:
@@ -167,18 +218,22 @@ def _top_matches_query(candidate_profile_id: int, filters: MatchFilters) -> Sele
     # else when the bot found it - a bootstrap crawl finds hundreds of
     # jobs in one hour, and their real ages differ by months.
     posted_at = func.coalesce(JobPosting.source_published_at, JobPosting.first_seen_at)
+    # Every word of the search is looked for on its own in the title and
+    # the company name, and a job ranks by how many it matched: the
+    # phrase "משרת סטודנט" is in no title, "סטודנט" is in twenty.
     text_hit = None
-    if filters.query:
-        needle = f"%{filters.query.strip().lower()}%"
-        text_hit = or_(
-            JobPosting.normalized_title.ilike(needle), Company.normalized_name.ilike(needle)
-        )
+    matched_words: ColumnElement[int] = literal(0)
+    for word in search_words(filters.query) if filters.query else []:
+        needle = f"%{word}%"
+        hit = or_(JobPosting.normalized_title.ilike(needle), Company.normalized_name.ilike(needle))
+        text_hit = hit if text_hit is None else or_(text_hit, hit)
+        matched_words = matched_words + case((hit, 1), else_=0)
     ordering: tuple[Any, ...]
     if filters.query_embedding is not None and text_hit is not None:
-        # Hybrid: an exact title/company hit outranks a merely similar
-        # job, then closeness of meaning, then the match score.
+        # Hybrid: a title/company hit outranks a merely similar job, more
+        # words matched first, then closeness of meaning, then the score.
         distance = JobPosting.embedding.cosine_distance(filters.query_embedding)
-        ordering = (case((text_hit, 0), else_=1), distance, JobMatch.final_score.desc())
+        ordering = (matched_words.desc(), distance, JobMatch.final_score.desc())
     elif filters.sort == "score":
         ordering = (JobMatch.final_score.desc(), posted_at.desc())
     else:
@@ -216,12 +271,8 @@ def _top_matches_query(candidate_profile_id: int, filters: MatchFilters) -> Sele
         )
     if filters.region is not None:
         query = query.where(JobPosting.region == filters.region)
-    if filters.seniority == "fit":
-        query = query.where(fit == "fit")
-    elif filters.seniority == "not_experienced":
-        query = query.where(fit.not_in(("experienced", "student")))
-    elif filters.seniority == "student":
-        query = query.where(fit == "student")
+    if hidden := hidden_fits(filters):
+        query = query.where(fit.not_in(sorted(hidden)))
     if filters.query_embedding is not None and text_hit is not None:
         near = JobPosting.embedding.is_not(None) & (
             JobPosting.embedding.cosine_distance(filters.query_embedding) <= SEMANTIC_MAX_DISTANCE

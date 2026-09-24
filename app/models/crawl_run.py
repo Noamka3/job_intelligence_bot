@@ -10,7 +10,7 @@ from app.models.enums import CrawlRunStatus
 
 
 class CrawlRun(Base):
-    """One observability record per source-check attempt (spec §33).
+    """One observability record per source-check attempt.
 
     Every crawl of a CareerSource writes one of these, success or failure,
     so the whole system is auditable without grepping application logs.

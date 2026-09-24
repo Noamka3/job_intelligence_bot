@@ -10,5 +10,4 @@ class CompanyRead(BaseModel):
     name: str
     normalized_name: str
     original_sheet_url: str | None
-    canonical_career_url: str | None
     enabled: bool

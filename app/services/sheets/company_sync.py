@@ -1,7 +1,7 @@
 """Company sync orchestration: company rows (from the Google Sheet or a
 local file) -> Company + CareerSource rows.
 
-Spec §38 rules this must honor:
+Rules this must honor:
 - a failed read aborts before touching the DB (never delete/disable
   companies because of a transient read failure)
 - upsert by normalized name, don't duplicate
@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 _PROBE_CONCURRENCY = 10
 
-# Per spec §19: API-backed sources are cheap to poll often; anything
+# API-backed sources are cheap to poll often; anything
 # requiring real page fetches (or, later, a browser) backs off. Measured
 # on real crawling: the 44 API sources take 1-6 seconds each. A plain
 # career site costs one listing download per crawl now that a job page

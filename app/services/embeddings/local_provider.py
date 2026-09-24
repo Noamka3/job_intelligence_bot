@@ -22,9 +22,8 @@ class LocalEmbeddingProvider:
     """Free, local EmbeddingProvider - runs entirely on this machine via
     fastembed (ONNX Runtime, no PyTorch, no API key, no network call).
 
-    The default provider (spec's suggested OpenAI default was swapped for
-    this one at the user's request to avoid any per-embedding cost - see
-    docs/architecture.md). First construction downloads and caches the
+    The default provider - chosen over OpenAI to avoid any per-embedding
+    cost (see docs/architecture.md). First construction downloads and caches the
     model (~240MB for the default multilingual MiniLM model) under
     $FASTEMBED_CACHE_PATH, or <system temp dir>/fastembed_cache when that
     isn't set (fastembed's own default - not ~/.cache); later runs reuse

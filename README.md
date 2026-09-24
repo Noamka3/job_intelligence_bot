@@ -7,17 +7,23 @@ Developer* asks for "2-3 years, mandatory".
 
 So I built this instead. It watches the career pages of the 242 companies
 on my own list, notices a new posting within minutes, reads it against my
-CV, and shows me the few that are actually worth an application.
+CV with a local embedding model and a rules engine, and shows me the few
+that are actually worth an application.
 
 It runs unattended: a FastAPI service, a Celery worker and scheduler,
-Postgres with `pgvector`, and a React dashboard, all in Docker. The
-embeddings and the LLM run on my own machine, so there is no API bill and
-my CV never leaves it.
+Postgres with `pgvector`, and a React dashboard, all in Docker. The AI
+parts (embeddings, semantic search, the LLM that reads my CV) run on my
+own machine, so there is no API bill and my CV never leaves it.
 
 ![Architecture](docs/architecture.svg)
 
-<details>
-<summary>The same flow in one line</summary>
+> **Status:** phases 1-9 are done and the bot runs every day. WhatsApp
+> alerts (phase 7) and moving it onto a small VPS (phase 10) are what is
+> left. See [Roadmap](#roadmap).
+
+---
+
+## How it works, end to end
 
 ```
 Google Sheet -> company sync -> source resolver -> 11 source adapters
@@ -31,19 +37,41 @@ Google Sheet -> company sync -> source resolver -> 11 source adapters
                    REST API -> React dashboard -> (WhatsApp, planned)
 ```
 
-</details>
+### 1. The company list
 
-> **Status:** phases 1-9 are done and the bot runs every day. WhatsApp
-> alerts (phase 7) and moving it onto a small VPS (phase 10) are what is
-> left. See [Roadmap](#roadmap).
+The source of truth is a Google Sheet I maintain: company name, careers
+URL. A sync reads it through a service account and upserts `companies`
+rows by normalized name. A company that vanishes from the sheet is
+disabled, never deleted, so its job history stays; a failed read aborts
+before touching the database, so a network hiccup can never wipe the
+list. The same sync runs from a local `.xlsx` for a one-off import.
 
----
+### 2. Working out how to read each company
 
-## Reading 208 different career pages
+Every careers URL is classified once by a resolver
+(`app/ingestion/resolver.py`) into a `source_type`, which decides which
+adapter will crawl it. The cheap checks come first: is this a known ATS
+host (Greenhouse, Lever, Ashby, Comeet, Workable, SmartRecruiters,
+Workday, Taleo)? If not, the page itself is fetched and read for a
+JSON-LD `JobPosting`, a WordPress REST API, an embedded board, or plain
+job links.
 
-Every company's careers page is its own problem, so there is no single
-scraper. A resolver classifies each URL once, and the cheapest adapter
-that can actually read it gets the job. The counts are from my real list:
+About 45 of the "custom" pages turned out to be a known ATS in disguise:
+a `COMEET.init({...})` call, a Greenhouse embed script, a
+`myworkdayjobs.com` link, or an API that the page's own JavaScript calls.
+The resolver recognises the real board and crawls it with the adapter I
+already have. A guessed board token is never stored until the ATS's
+public API answers for it - one company still had a dead Greenhouse
+embed next to the Ashby board it had migrated to.
+
+LinkedIn URLs are marked `unsupported` with a reason and never crawled.
+
+### 3. Reading the jobs
+
+Each source type has an adapter with two methods: `list_jobs` returns
+cheap stubs from the listing, `fetch_job` fetches one posting's details.
+Nothing downstream knows which adapter a job came from. Counts are from
+my real list:
 
 | Tier | How the jobs are read | Sources | Cost |
 |---|---|---|---|
@@ -54,44 +82,25 @@ that can actually read it gets the job. The counts are from my real list:
 | Plain HTML | the page's own structure, no hardcoded selectors | 138 | 2-5 s |
 | Headless browser | Playwright, only after everything above found nothing | escalated | ~20 s |
 
-Two parts of this I am happy with.
-
-**About 45 of the "custom" pages turned out to be a known ATS in
-disguise.** The resolver reads the page and recognises the real board
-behind it: a `COMEET.init({...})` call, a Greenhouse embed script, a
-`myworkdayjobs.com` link, or an API that the page's own JavaScript calls.
-It then crawls that board with an adapter I already have. A guessed board
-token is never stored until the ATS's public API answers for it, because
-one company still had a dead Greenhouse embed sitting next to the Ashby
-board it had migrated to, and only the live one should be kept.
-
-**Nothing is configured as "needs a browser".** A plain page that returns
-no job links in three successful crawls in a row, or answers 403, is
-handed to the Playwright adapter by itself and polled hourly from then
-on. The slow tier is entered on evidence, not on a hunch.
-
-A rendered page is also watched for what it *fetches*: when the HTML has
+Nothing is configured as "needs a browser". A plain page that returns no
+job links in three successful crawls in a row, or answers 403, is handed
+to the Playwright adapter by itself and polled hourly from then on. A
+rendered page is also watched for what it *fetches*: when the HTML has
 no links to follow, the JSON its own scripts pull becomes the job list.
-Picking the right captured document is harder than it sounds, because
-field names lie. One site's *product cards* carry a `description` while
+Choosing the right captured document is harder than it sounds, because
+field names lie - one site's *product cards* carry a `description` while
 its real postings keep theirs under `AboutTheRole`, so my first rule
 cheerfully imported "Bank Hapoalim" as a job title. What works is
-measuring whether the titles read like job titles. The rule I settled on,
-and the two wrong ones before it, are written down in
-[`docs/job_sources.md`](docs/job_sources.md).
+measuring whether the titles read like job titles.
 
----
-
-## The crawl used to take two and a half hours
+### 4. Crawling without downloading everything again
 
 The first version downloaded every job page on every crawl. Profiling
-said plain career sites were 85% of all crawl time, which is why they
-could only be polled every 30 minutes.
-
-Now a job page is downloaded only when the link is new, when the listing
-reports a newer timestamp, or when the stored copy is older than
-`JOB_DETAILS_REFRESH_HOURS`. Everything else is confirmed present from
-the listing alone.
+said plain career sites were 85% of all crawl time and a full cycle took
+two and a half hours. Now a job page is downloaded only when the link is
+new, when the listing reports a newer timestamp, or when the stored copy
+is older than `JOB_DETAILS_REFRESH_HOURS`; everything else is confirmed
+present from the listing alone.
 
 | Same sites, before and after | Average | Median | Worst |
 |---|---|---|---|
@@ -101,11 +110,47 @@ the listing alone.
 That bought the polling interval: plain sites went from 30 minutes to 10,
 and a new posting now shows up in about 12 minutes instead of 35.
 
----
+### 5. Storing, de-duplicating, closing
 
-## Deciding what is worth applying to
+A posting is identified by `(source, external id)`, with a fingerprint of
+company + title + location as the fallback for sources that have no
+stable id. A content hash decides whether anything actually changed, so
+an unchanged posting is never re-embedded or re-scored. A job that
+disappears from a listing is not closed right away: it has to be missing
+from `JOB_MISSING_THRESHOLD` consecutive *successful* crawls first,
+because one crawl can drop a job through a pagination hiccup. Closed jobs
+keep their history. `source_published_at` (what the ATS says) and
+`first_seen_at` (when my bot noticed) are separate columns and never
+substituted for each other.
 
-The score is deliberately not one cosine similarity:
+### 6. Turning text into vectors (AI)
+
+Every posting, my CV and every target role are embedded with
+`paraphrase-multilingual-MiniLM-L12-v2` through fastembed (ONNX, no
+PyTorch, no API key). The model is multilingual on purpose: about 40%
+of the postings are in Hebrew, and a Hebrew job and an English CV have to
+land near each other. Vectors live in Postgres with `pgvector`, so
+similarity is a SQL `ORDER BY` and there is no second database. The
+provider is an interface (`EmbeddingProvider`); OpenAI's
+`text-embedding-3-large` sits behind `EMBEDDING_PROVIDER=openai` for
+anyone who wants it, but the default costs nothing and keeps the CV on
+the machine.
+
+### 7. Reading my CV (AI)
+
+A CV upload (PDF or DOCX) is parsed to text, hashed, versioned, and
+embedded. A local LLM (`llama3.2:3b` through Ollama) then extracts a
+structured profile: languages, frameworks, years of experience, domains.
+That step is deliberately best-effort - CPU-only inference on my machine
+took minutes - so it runs once per upload with a timeout, and a failure
+never blocks the CV from being saved. Matching uses the raw text and the
+embedding first and the structured profile second, so a bad extraction
+degrades the score instead of breaking it.
+
+### 8. Scoring every job (AI + rules)
+
+This is the core of the project, and the score is deliberately not one
+cosine similarity:
 
 ```
 final = 100 x role_gate x quality
@@ -122,34 +167,36 @@ the title and the keywords, multiplies everything else by how much the
 job really is the role I am looking for, and leaves it at 30%. Plain
 semantic similarity would have put it near the top of my list.
 
-Other decisions the real data forced on me:
+Decisions the real data forced on me:
 
 - The local embedding model's raw similarity sits between 0.15 and 0.55
-  even for a perfect match, and it barely separates junior from senior.
-  So it is calibrated onto that measured range and weighted lightly, and
+  even for a perfect match, and barely separates junior from senior. So
+  it is calibrated onto that measured range and weighted lightly, and
   seniority plus skill overlap carry the score. That is why the weights
-  in `.env` are nowhere near the textbook defaults.
+  in `.env` are nowhere near an even split.
 - Seniority is read in Hebrew and in English, from the requirements
   section rather than the whole description. Ranges (`3-5 שנות ניסיון`)
   resolve to their lower bound, Hebrew numerals and spelled-out numbers
   are handled, and "no experience required" phrasings are recognised
   together with their negations (`לא יתקבלו מועמדים ללא ניסיון`).
 - Stated years beat the title. A posting that reads junior but asks for
-  "2-3 years, mandatory" is tagged *requires experience* and hidden. The
-  bug that made that obvious is now a test.
+  "2-3 years, mandatory" is tagged *requires experience* and hidden.
 - Student positions get their own tag. I finished my degree, so
   "Software Development Student" is not a job I can take however well it
   matches. Those postings are labelled *משרת סטודנט* and kept out of the
   default view instead of filling the top of it.
+- Skills are matched through a canonical alias vocabulary on word
+  boundaries, and aliases that are also ordinary words ("Go", "React",
+  "Spring") only count in a technical context, after "go-to-market" and
+  "send your CV" produced four bogus skills on one posting.
 - Every match carries **reasons** and **concerns** in plain language, so
   a score I disagree with can be argued with instead of guessed at.
 
----
+### 9. The scheduler
 
-## The scheduler
-
-Celery Beat dispatches due sources every 5 minutes. Three things I got
-wrong first and now document in the code:
+Celery Beat dispatches due sources every 5 minutes; API-backed sources
+every tick, plain sites every 10 minutes, the browser fallback hourly.
+Three things I got wrong first and now document in the code:
 
 - The dispatcher runs on its own queue with its own worker. On the shared
   queue it waited behind hundreds of queued crawls after any pause, and
@@ -161,12 +208,46 @@ wrong first and now document in the code:
   at a company with a proper ATS never waits behind a 250-page career
   site.
 
-`source_published_at` (what the ATS says) and `first_seen_at` (when my
-bot noticed) are kept apart and never substituted for each other in the
-UI. A job that disappears from a listing is not deleted and not closed
-right away. It has to be missing from several consecutive *successful*
-crawls first, because one crawl can drop a job through a pagination
-hiccup. Closed jobs keep their history.
+Every attempt is a `crawl_runs` row with its status, counts and error
+type, and a source that keeps failing backs off exponentially instead of
+hammering the site.
+
+### 10. The dashboard (React + TypeScript)
+
+The FastAPI service exposes the matches, jobs, companies, sources and a
+feedback endpoint; the React app is a single page over it, in Hebrew.
+Each card shows the score ring, the seniority tag, the reasons and
+concerns, and one-tap feedback (interested / applied / not relevant / too
+senior) that hides a job from the default view and opens an application
+record when I apply.
+
+Search is hybrid (AI): every word typed is looked for in titles and
+company names, and the whole query is embedded with the same model the
+jobs were embedded with, so "משהו עם AI וסטארטאפ קטן" finds jobs that
+read like that, and "backend developer" puts *Backend Developer* above
+*Developer*. Filters: seniority, minimum score, found within (today by
+default), region in Israel, target role.
+
+### 11. Alerts (planned)
+
+Phase 7 adds a WhatsApp message for a new posting above the notification
+threshold, deduplicated per job through `notification_logs`.
+
+---
+
+## Where the AI is
+
+| What | Model | Runs where | Cost |
+|---|---|---|---|
+| Embedding postings, CV and target roles | `paraphrase-multilingual-MiniLM-L12-v2` (fastembed / ONNX) | my machine | free |
+| Similarity search | `pgvector` cosine distance inside Postgres | my machine | free |
+| Structured CV extraction | `llama3.2:3b` through Ollama | my machine | free |
+| Semantic search in the dashboard | same embedding model, query embedded on the fly | my machine | free |
+| Scoring | hybrid: rules for role, seniority and skills, embeddings for similarity | my machine | free |
+
+OpenAI is wired in behind two environment variables for anyone who wants
+better embeddings or a stronger extraction model. I do not use it: the
+whole point was zero running cost and a CV that stays local.
 
 ---
 
@@ -180,7 +261,7 @@ Numbers from the live database, not from a sample:
 | Companies currently producing jobs | 134 |
 | Active postings stored | ~5,500, about 2,400 confirmed to be in Israel |
 | Crawl runs so far | 22,000+ |
-| Tests | 397 |
+| Tests | 399 |
 
 Scoring behaviour against my own CV, measured over those postings:
 developer titles that read as junior score a median of 76, senior
@@ -222,7 +303,7 @@ uv run python -m app.cli sync-sheet          # re-import the companies
 uv run python -m app.cli crawl-now           # crawl everything due, right now
 uv run python -m app.cli score-all           # rescore every active job
 uv run python -m app.cli reassess-seniority  # re-read experience requirements
-uv run pytest                                # 397 tests
+uv run pytest                                # 399 tests
 uv run ruff check . && uv run mypy app tests # lint and types
 ```
 
@@ -237,7 +318,7 @@ with a TLS-inspecting antivirus, and it has its own page in
 
 ## How it is built
 
-- **397 tests**, unit and integration, the integration ones against a
+- **399 tests**, unit and integration, the integration ones against a
   real Postgres with `pgvector`. Every bug described above has a test
   named after it.
 - **`mypy --strict`** over the app and the tests, `ruff` for lint and
@@ -324,6 +405,7 @@ app/
   schemas/         Pydantic request/response types
   services/
     candidate/     CV parsing and structured extraction
+    embeddings/    the EmbeddingProvider interface and both providers
     jobs/          ingestion, normalization, location
     matching/      scoring, seniority, skills, queries
     sheets/        company sync
@@ -333,7 +415,7 @@ app/
   tasks/           Celery app, scheduler, crawl tasks
 frontend/          React + TypeScript dashboard (Vite)
 tests/             unit and integration tests
-docs/              architecture, job sources, matching, dashboard
+docs/              architecture, job sources, matching, dashboard, operations
 alembic/           migrations
 ```
 

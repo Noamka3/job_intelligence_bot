@@ -30,7 +30,7 @@ def test_team_leader_flags_lead() -> None:
 
 
 def test_body_text_mentioning_senior_does_not_flag_the_job() -> None:
-    """spec §9's explicit counter-example: "work closely with senior
+    """The classic counter-example: "work closely with senior
     engineers" in body text must not make an otherwise-junior job read
     as senior.
     """

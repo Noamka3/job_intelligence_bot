@@ -1,5 +1,5 @@
 """Persists a MatchResult as a JobMatch row - one per (candidate_profile,
-target_role, job), recomputed in place rather than appended (spec §25's
+target_role, job), recomputed in place rather than appended (the
 unique constraint is the source of truth for this).
 """
 

@@ -1,6 +1,6 @@
 """CareerSourceResolver: classifies a company's raw sheet URL into a
 CareerSourceType, so the ingestion layer knows which adapter should
-handle it. Never scrapes LinkedIn - see spec §14.
+handle it. Never scrapes LinkedIn.
 
 Resolution is hostname-based first (fast, no network call) for every ATS
 this project knows about. Anything else gets one bounded HTTP probe of
@@ -508,7 +508,7 @@ def _probe_page(url: str) -> ResolvedSource:
     """Bounded, best-effort HTTP GET: embedded ATS first, then JSON-LD
     JobPosting markup, else generic_html. Any failure (timeout, DNS,
     non-2xx, ...) degrades to generic_html rather than raising - one
-    unreachable company must never abort a whole sheet sync (spec §34).
+    unreachable company must never abort a whole sheet sync.
     """
     try:
         body = _fetch_capped(url)

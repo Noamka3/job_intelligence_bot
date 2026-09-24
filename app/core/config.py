@@ -134,8 +134,8 @@ class Settings(BaseSettings):
     # optimization - a global board like Intel's lists hundreds of jobs
     # elsewhere that would otherwise be fetched, embedded and then dropped
     # by the Israel-only filter anyway. Empty string = no filter. Not the
-    # same thing as the Israel-only *display* filter in the API (spec §28
-    # keeps the pipeline itself country-agnostic).
+    # same thing as the Israel-only *display* filter in the API (the
+    # pipeline itself stays country-agnostic).
     target_country: str = "Israel"
 
     # --- Matching / notifications ---
@@ -150,7 +150,7 @@ class Settings(BaseSettings):
     # app/services/matching/scoring.py, not here, so a bad .env value
     # fails loudly at scoring time with a clear message.
     #
-    # Deliberately far from spec §8's suggested 30/20/20/10/10/5/5.
+    # Deliberately far from the 30/20/20/10/10/5/5 split this started with.
     # Measured on the real data (3,100 jobs, this CV): the local model's
     # raw cosine similarity ranges 0.15-0.55 for the CV and 0.10-0.50 for
     # the role intent even on perfect matches, and barely separates

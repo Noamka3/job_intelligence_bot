@@ -9,10 +9,9 @@ don't need to be re-derived later. Every adapter below was exercised
 against at least one real company's live board during development; the
 Phase 8 ones against the sheet's own companies (see each section).
 The company distribution below is the real breakdown from the current
-company spreadsheet (240 rows), which is why adapter priority here differs
-slightly from the spec's abstract ranking (Comeet, with ~10 real
-companies, was built alongside Greenhouse/Lever/Ashby rather than after
-JSON-LD as originally ranked).
+company spreadsheet (240 rows), which is what set the adapter priority
+(Comeet, with ~10 real companies, was built alongside
+Greenhouse/Lever/Ashby rather than after JSON-LD as first planned).
 
 ## What's actually in the spreadsheet today
 
@@ -84,7 +83,7 @@ search summary did not surface:
   (free text like `"Full-time"`), `experience_level` (free text like
   `"Senior"` - a real seniority signal Comeet provides directly, not yet
   used by this project; Phase 5's seniority detection is title/requirements
-  based per spec §9 rather than trusting each ATS's own inconsistent
+  based rather than trusting each ATS's own inconsistent
   labels, but this is worth revisiting), `time_updated` (ISO-8601),
   `url_active_page`.
 - Detail call (`details=true`) adds a `details` array of
@@ -161,7 +160,7 @@ search summary did not surface:
   `jobAd.sections.{companyDescription,jobDescription,qualifications,additionalInformation}.text`
   (HTML), `applyUrl`, `postingUrl`. `security: []` in the spec - no auth.
   Only `releasedDate`, no updated-at. No company in the sheet uses it
-  today; built because the spec lists it and it verified cheaply.
+  today; built because it verified cheaply.
 
 ### Oracle Taleo careersection (Phase 8) - verified live against radware.taleo.net
 - `POST https://{host}/careersection/rest/jobboard/searchjobs?portal=101430233&lang=en`

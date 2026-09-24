@@ -324,9 +324,9 @@ def test_top_matches_tag_and_filter_by_what_the_posting_says_about_experience(
 def test_student_positions_are_set_aside_under_their_own_filter(
     api_client: TestClient, db_session: Session
 ) -> None:
-    """The owner has a degree, not a student card. Student positions and
-    internships scored like junior roles and took over the top of the
-    list; they are tagged and kept out of the default view instead."""
+    """A student position is open only to people still studying. Student
+    positions and internships scored like junior roles and took over the
+    top of the list; they are tagged and kept out of the default view."""
     from app.models.enums import SeniorityLevel
 
     open_job, _, _ = _seed(db_session)
@@ -343,6 +343,42 @@ def test_student_positions_are_set_aside_under_their_own_filter(
 
     only_students = api_client.get("/matches/top", params={"seniority": "student"}).json()
     assert {m["job_id"] for m in only_students} == {open_job.id}
+
+
+def test_search_keeps_a_bucket_it_names_visible(
+    api_client: TestClient, db_session: Session
+) -> None:
+    """Live: searching "משרת סטודנט" returned junior jobs. The phrase was in
+    no title, and the default seniority filter hid the student postings
+    the search asked for by name."""
+    from app.models.enums import SeniorityLevel
+
+    open_job, _, _ = _seed(db_session)
+    open_job.normalized_title = "סטודנט/ית לפיתוח תוכנה"
+    open_job.seniority = SeniorityLevel.INTERN
+    db_session.commit()
+
+    default_view = api_client.get("/matches/top", params={"seniority": "not_experienced"}).json()
+    assert open_job.id not in {m["job_id"] for m in default_view}
+
+    found = api_client.get(
+        "/matches/top", params={"seniority": "not_experienced", "q": "משרת סטודנט"}
+    ).json()
+    assert [m["job_id"] for m in found] == [open_job.id]
+
+
+def test_search_ranks_by_how_many_words_matched(
+    api_client: TestClient, db_session: Session
+) -> None:
+    open_job, _, abroad_job = _seed(db_session)
+    abroad_job.normalized_title = "backend developer"
+    db_session.commit()
+
+    # "backend" and "developer" beat "junior" alone.
+    ranked = api_client.get(
+        "/matches/top", params={"israel_only": "false", "q": "junior backend developer"}
+    ).json()
+    assert [m["job_id"] for m in ranked] == [abroad_job.id, open_job.id]
 
 
 def test_stated_years_above_the_roles_ceiling_tag_a_junior_looking_posting_as_experienced(

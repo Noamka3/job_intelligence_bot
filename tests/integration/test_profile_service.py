@@ -159,8 +159,8 @@ def test_ingest_resume_saves_successfully_when_structured_extraction_fails(
     error: Exception,
 ) -> None:
     """The resume itself (raw text + embedding) must never be lost just
-    because the LLM step is slow/unavailable - spec §6: matching must not
-    depend entirely on structured data. Observed for real on this dev
+    because the LLM step is slow/unavailable - matching must not depend
+    entirely on structured data. Observed for real on this dev
     machine: CPU-only Ollama inference can take minutes to hours.
     """
 

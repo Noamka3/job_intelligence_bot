@@ -88,7 +88,6 @@ class JobPosting(Base, TimestampMixin):
     preferred_skills: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False, default=list)
 
     experience_min_years: Mapped[int | None] = mapped_column(Integer)
-    experience_max_years: Mapped[int | None] = mapped_column(Integer)
     seniority: Mapped[SeniorityLevel] = mapped_column(
         Enum(SeniorityLevel, name="seniority_level"), nullable=False, default=SeniorityLevel.UNKNOWN
     )

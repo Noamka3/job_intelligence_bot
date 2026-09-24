@@ -162,16 +162,6 @@ export const COMPONENT_LABELS: { key: string; label: string; hint: string }[] = 
   { key: "recency_score", label: "טריות", hint: "כמה זמן המשרה מפורסמת" },
 ];
 
-export function extractedSkills(structured: Record<string, unknown>): string[] {
-  const keys = ["skills", "programming_languages", "frameworks", "databases", "cloud", "devops"];
-  const seen = new Set<string>();
-  for (const key of keys) {
-    const values = structured[key];
-    if (Array.isArray(values)) for (const v of values) if (typeof v === "string") seen.add(v);
-  }
-  return [...seen];
-}
-
 /** Every section of the structured CV profile, in display order, with a
  * Hebrew label - so the user can check what the scan understood. */
 export const PROFILE_SECTIONS: { key: string; label: string }[] = [

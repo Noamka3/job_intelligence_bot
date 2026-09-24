@@ -20,9 +20,9 @@ const LIVE_MS = 30_000;
 
 const DEFAULT_FILTERS: MatchFilters = {
   // Everything found or published today, whatever its score, newest
-  // first - the user's choice: the day's full picture, with the score
-  // ring to judge each one; older postings and the 60%+ cut are one
-  // click away, nothing is deleted.
+  // first: the day's full picture, with the score ring to judge each
+  // one. Older postings and the 60%+ cut are one click away; nothing is
+  // deleted.
   minScore: 0,
   days: 0,
   targetRoleId: null,
@@ -30,8 +30,8 @@ const DEFAULT_FILTERS: MatchFilters = {
   israelOnly: true,
   hideDismissed: true,
   // Postings that state a requirement above the target role's ceiling
-  // are hidden by default, and so are student/internship positions
-  // (the owner has a degree, not a student card) - they have their own
+  // are hidden by default, and so are student/internship positions,
+  // which are open only to people still studying - they have their own
   // view. Ones that say nothing stay, with a grey tag.
   seniority: "not_experienced",
   query: "",

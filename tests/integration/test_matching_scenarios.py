@@ -1,4 +1,4 @@
-"""End-to-end validation of spec §43's exact expected-behavior examples,
+"""End-to-end validation of the matching engine's acceptance examples,
 using real embeddings (the local provider - no network, no Ollama) rather
 than mocks. This is the actual acceptance test for the hybrid matching
 engine: a job semantically similar to the candidate's background must

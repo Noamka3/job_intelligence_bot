@@ -1,7 +1,7 @@
 """Cosine similarity between two already-stored embeddings.
 
 Component-level semantic scores (candidate_semantic_score,
-intent_semantic_score) are legitimately raw-ish similarity - spec §8 says
+intent_semantic_score) are legitimately raw-ish similarity - the rule is
 not to use embedding similarity as the *final* user-facing score, not
 that it can't be one input among several. Clamped to [0,1]: real text
 embeddings for related professional content essentially never produce a

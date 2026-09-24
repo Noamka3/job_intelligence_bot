@@ -1,4 +1,4 @@
-"""Location component score (spec §8/§28). Reuses the same Israel
+"""Location component score. Reuses the same Israel
 classifier job ingestion already writes into JobPosting.country, so the
 "why" behind a location score is always explainable from data the job
 actually has.

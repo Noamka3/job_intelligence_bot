@@ -1,7 +1,7 @@
 """Shared HTTP helper for adapters: bounded timeout, retry with
 exponential backoff + jitter on transient failures only (5xx/429/network
 errors) - a real 4xx (bad board token, 404) fails immediately rather than
-retrying something that will never succeed. See spec §18/§34.
+retrying something that will never succeed.
 
 Every request goes through ensure_public_url first: the crawler follows
 URLs it was given (a spreadsheet cell, a link on a third-party page), and

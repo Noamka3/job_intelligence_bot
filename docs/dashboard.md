@@ -31,12 +31,18 @@ hot reload and proxies every API prefix to uvicorn on `:8000`.
 | `/app/status` | Is the bot alive: a live **countdown to the next scheduled refresh** (from the scheduler's own heartbeat in Redis, turns amber if a tick is 2+ minutes late), how many sources are waiting in the crawl queue, last crawl, active jobs (classified Israel / unknown location / total), found in the last 24h, sources and jobs by type, sources failing repeatedly, the last 25 crawl runs. Refreshes every 30s. |
 | `/app/profile` | Upload a CV (drag & drop, PDF/DOCX), see the active version, **what the scan does step by step and everything it extracted** (languages, frameworks, databases, education, projects, ...) plus the full raw text read from the file - so a missed skill is visible; switch back to an older version; target roles with enable/disable and a form to add one. Any change here rescores every job server-side before the request returns. |
 
-**Search is hybrid.** Whatever is typed is matched as text against
-title/company *and* embedded with the same local model the jobs were
-embedded with; exact text hits rank first, then jobs whose embedding is
+**Search is hybrid.** Every word typed is looked for on its own in the
+title and the company name (as a substring, so "פיתוח" finds "לפיתוח";
+filler words like "of" and "משרת" are skipped), and the whole query is
+also embedded with the same local model the jobs were embedded with.
+Jobs matching more of the words rank first, then jobs whose embedding is
 within cosine distance 0.75 of the query, by closeness. So "backend
-developer" finds backend jobs, and "משהו עם AI וסטארטאפ קטן" finds jobs
-that read like that.
+developer" puts "Backend Developer" above "Developer", and "משהו עם AI
+וסטארטאפ קטן" finds jobs that read like that. A search that names a
+bucket the seniority filter hides - "סטודנט", "senior", "manager" - keeps
+that bucket visible for the query: typing "משרת סטודנט" used to return the
+junior jobs closest in meaning, because the student postings it asked
+for by name were filtered out.
 
 Feedback semantics: "מעניין"/"הגשתי" mark a job; "לא רלוונטי"/"בכיר מדי"
 (and the other dismissing actions) hide it from the default list - the

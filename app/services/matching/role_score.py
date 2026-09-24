@@ -1,4 +1,4 @@
-"""Title/role component score (spec §8): how well a job's title/department
+"""Title/role component score: how well a job's title/department
 matches the TargetRole being scored against, independent of the semantic
 embedding comparison - a cheap, explainable signal that catches obvious
 matches/mismatches embeddings can sometimes blur.

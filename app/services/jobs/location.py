@@ -1,8 +1,8 @@
 """Best-effort country classification from an ATS's free-text location
 string (e.g. "Tel Aviv, IL", "Warsaw", "United States").
 
-Spec §28: Israel is the initial market, and the architecture must not
-hardcode Tel Aviv only nor block other countries being added later. This
+Israel is the initial market, and the architecture must not hardcode
+Tel Aviv only nor block other countries being added later. This
 returns UNKNOWN rather than guessing when a location can't be classified
 confidently - an unmatched location should never be silently mislabeled
 as "not Israel" and disappear from results.
@@ -17,9 +17,9 @@ from __future__ import annotations
 
 import re
 
-# Israeli city/region name variants actually seen across the real company
-# sheet during Phase 4/5 verification, plus spec §28's explicit list.
-# English and Hebrew. Not exhaustive - unmatched text falls back to
+# Israeli city/region name variants actually seen in the real companies'
+# postings, plus the major cities. English and Hebrew. Not exhaustive -
+# unmatched text falls back to
 # UNKNOWN rather than a wrong guess.
 _ISRAELI_PLACE_NAMES = {
     "tel aviv",
@@ -322,8 +322,8 @@ def classify_country(location_text: str | None) -> str | None:
     """Returns "Israel" when confidently Israeli, None otherwise
     (covers both "confidently elsewhere" and "can't tell") - the
     JobPosting.country column, like the rest of ATS-sourced fields, is
-    best left unset rather than populated with a guess (spec §22's
-    "never invent" principle applies here too).
+    best left unset rather than populated with a guess - never invent
+    what the source didn't say.
     """
     if not location_text:
         return None

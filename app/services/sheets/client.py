@@ -1,6 +1,6 @@
 """Authenticated Google Sheets API client.
 
-Uses a service account (spec §2/§40: GOOGLE_APPLICATION_CREDENTIALS). The
+Uses a service account (GOOGLE_APPLICATION_CREDENTIALS). The
 target spreadsheet must be shared with that service account's
 client_email (Viewer access is enough) - see README.md for setup.
 """

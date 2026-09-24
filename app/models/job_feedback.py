@@ -12,7 +12,7 @@ from app.models.enums import JobFeedbackAction
 class JobFeedback(Base):
     """A user decision about a job (interested / applied / not relevant /
     ...). Collected as-is for now; a later phase may use this to tune
-    matching weights, but no learning happens here yet - see spec §29.
+    matching weights, but no learning happens here yet.
     """
 
     __tablename__ = "job_feedback"
