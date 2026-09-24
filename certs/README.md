@@ -50,7 +50,7 @@ Run this from the project root. It exports whatever Avast root Windows
 currently trusts, writes it here, and rebuilds the images.
 
 ```powershell
-cd C:\Users\97254\Desktop\Bot_career
+cd <path-to>\Bot_career
 
 # 1. Export the certificate Windows trusts right now
 $live = Get-ChildItem Cert:\LocalMachine\Root | Where-Object { $_.Subject -match 'Avast' } | Select-Object -First 1

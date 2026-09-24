@@ -59,8 +59,11 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6380/0"
 
     # --- Google Sheets ---
+    # No default: the sheet is the owner's own list of companies, and its
+    # id is all anyone needs to read it when the sheet is link-shared.
+    # Set both in .env, which is never committed.
     google_sheet_id: str = ""
-    google_sheet_gid: int = 168609393
+    google_sheet_gid: int = 0
     google_application_credentials: str = "./secrets/google-service-account.json"
 
     # --- Embeddings ---

@@ -11,7 +11,10 @@ def test_settings_defaults_are_sane() -> None:
     assert settings.embedding_dimensions == 384
     assert settings.embedding_model == "text-embedding-3-large"
     assert settings.default_timezone == "Asia/Jerusalem"
-    assert settings.google_sheet_gid == 168609393
+    # The sheet is the owner's own, so its id has no default and must
+    # come from .env - see config.py.
+    assert settings.google_sheet_id == ""
+    assert settings.google_sheet_gid == 0
     assert 0 <= settings.notification_score_threshold <= 100
 
 

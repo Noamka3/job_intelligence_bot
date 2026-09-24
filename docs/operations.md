@@ -24,7 +24,7 @@ Three steps, in this order, every time:
    something is wrong with the project.
 2. **Start the containers** (Postgres, Redis, worker, scheduler):
    ```powershell
-   cd C:\Users\97254\Desktop\Bot_career
+   cd <path-to>\Bot_career
    docker compose up -d
    ```
    Expect four lines saying `Started` or `Running`.
