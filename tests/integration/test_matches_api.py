@@ -321,6 +321,30 @@ def test_top_matches_tag_and_filter_by_what_the_posting_says_about_experience(
     assert api_client.get("/matches/top", params={"seniority": "bogus"}).status_code == 422
 
 
+def test_student_positions_are_set_aside_under_their_own_filter(
+    api_client: TestClient, db_session: Session
+) -> None:
+    """The owner has a degree, not a student card. Student positions and
+    internships scored like junior roles and took over the top of the
+    list; they are tagged and kept out of the default view instead."""
+    from app.models.enums import SeniorityLevel
+
+    open_job, _, _ = _seed(db_session)
+    open_job.seniority = SeniorityLevel.INTERN
+    open_job.experience_min_years = 0  # asks for no experience - still a student job
+    db_session.commit()
+
+    (match,) = [m for m in api_client.get("/matches/top").json() if m["job_id"] == open_job.id]
+    assert match["seniority_fit"] == "student"
+
+    for hides_students in ("fit", "not_experienced"):
+        listed = api_client.get("/matches/top", params={"seniority": hides_students}).json()
+        assert open_job.id not in {m["job_id"] for m in listed}
+
+    only_students = api_client.get("/matches/top", params={"seniority": "student"}).json()
+    assert {m["job_id"] for m in only_students} == {open_job.id}
+
+
 def test_stated_years_above_the_roles_ceiling_tag_a_junior_looking_posting_as_experienced(
     api_client: TestClient, db_session: Session
 ) -> None:

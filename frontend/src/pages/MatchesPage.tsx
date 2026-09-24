@@ -30,7 +30,9 @@ const DEFAULT_FILTERS: MatchFilters = {
   israelOnly: true,
   hideDismissed: true,
   // Postings that state a requirement above the target role's ceiling
-  // are hidden by default; ones that say nothing stay, with a grey tag.
+  // are hidden by default, and so are student/internship positions
+  // (the owner has a degree, not a student card) - they have their own
+  // view. Ones that say nothing stay, with a grey tag.
   seniority: "not_experienced",
   query: "",
   sort: "recent",
@@ -158,6 +160,7 @@ export function MatchesPage() {
           options={[
             { value: "fit", label: "רק מתאים לג'וניור" },
             { value: "not_experienced", label: "בלי דורשות ניסיון" },
+            { value: "student", label: "משרות סטודנט" },
             { value: "all", label: "הכל" },
           ]}
           onChange={(seniority) => setFilters((f) => ({ ...f, seniority }))}

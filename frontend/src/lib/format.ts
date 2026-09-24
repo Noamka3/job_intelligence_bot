@@ -72,10 +72,12 @@ export const SENIORITY_FIT_LABELS: Record<SeniorityFit, string> = {
   fit: "מתאים לג'וניור",
   unknown: "ותק לא צוין",
   experienced: "דורש ניסיון",
+  student: "משרת סטודנט",
 };
 
 /** The tag's one-line explanation: what in the posting decided it. */
 export function seniorityFitDetail(match: Match): string {
+  if (match.seniority_fit === "student") return "פתוחה לסטודנטים בלבד (התמחות / משרת סטודנט)";
   if (match.seniority_fit === "experienced" && match.experience_min_years !== null) {
     return `דורש ${match.experience_min_years}+ שנות ניסיון`;
   }

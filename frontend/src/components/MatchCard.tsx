@@ -62,7 +62,9 @@ export function MatchCard({
                 ? "good"
                 : match.seniority_fit === "experienced"
                   ? "bad"
-                  : "neutral"
+                  : match.seniority_fit === "student"
+                    ? "warn"
+                    : "neutral"
             }
             title={seniorityFitDetail(match)}
           >

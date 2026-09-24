@@ -72,8 +72,8 @@ export interface Match {
   experience_min_years: number | null;
 }
 
-export type SeniorityFit = "fit" | "unknown" | "experienced";
-export type SeniorityFilter = "all" | "fit" | "not_experienced";
+export type SeniorityFit = "fit" | "unknown" | "experienced" | "student";
+export type SeniorityFilter = "all" | "fit" | "not_experienced" | "student";
 export type SeniorityLevel =
   | "intern"
   | "junior"

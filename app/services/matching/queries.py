@@ -27,15 +27,18 @@ from app.services.jobs.israel_filter import israel_only_clause
 # experience_min_years, set at ingest) means for *this* target role:
 #   experienced - a senior-level title, or stated years above the role's
 #                 max_expected_years
+#   student     - an internship or a student position: open only to
+#                 people still studying, whatever else it says
 #   fit         - stated years within it, or else an entry-level title
 #   unknown     - the posting says nothing readable about experience
 # Stated years outrank the title's level: "2-3 years mandatory" under a
 # junior-looking title is a requirement, and a candidate with none
-# doesn't meet it.
-SeniorityFit = Literal["fit", "unknown", "experienced"]
-SeniorityFilter = Literal["all", "fit", "not_experienced"]
+# doesn't meet it. Being a student is the exception - no amount of
+# experience makes a student position open to a graduate.
+SeniorityFit = Literal["fit", "unknown", "experienced", "student"]
+SeniorityFilter = Literal["all", "fit", "not_experienced", "student"]
 
-_ENTRY_LEVELS = (SeniorityLevel.JUNIOR, SeniorityLevel.INTERN)
+_ENTRY_LEVELS = (SeniorityLevel.JUNIOR,)
 _SENIOR_LEVELS = (
     SeniorityLevel.SENIOR,
     SeniorityLevel.STAFF,
@@ -52,6 +55,7 @@ def seniority_fit_expression() -> Any:
     ceiling = func.coalesce(TargetRole.max_expected_years, _DEFAULT_MAX_EXPECTED_YEARS)
     return case(
         (JobPosting.seniority.in_(_SENIOR_LEVELS), "experienced"),
+        (JobPosting.seniority == SeniorityLevel.INTERN, "student"),
         (JobPosting.experience_min_years > ceiling, "experienced"),
         (JobPosting.experience_min_years.is_not(None), "fit"),
         (JobPosting.seniority.in_(_ENTRY_LEVELS), "fit"),
@@ -101,7 +105,8 @@ class MatchFilters:
     region: str | None = None
     hide_dismissed: bool = True
     # "fit": only postings that read as entry-level; "not_experienced":
-    # also the ones that say nothing about experience.
+    # also the ones that say nothing about experience; "student": only
+    # student/internship positions, which the other two leave out.
     seniority: SeniorityFilter = "all"
     sort: MatchSort = "recent"
     limit: int = 50
@@ -214,7 +219,9 @@ def _top_matches_query(candidate_profile_id: int, filters: MatchFilters) -> Sele
     if filters.seniority == "fit":
         query = query.where(fit == "fit")
     elif filters.seniority == "not_experienced":
-        query = query.where(fit != "experienced")
+        query = query.where(fit.not_in(("experienced", "student")))
+    elif filters.seniority == "student":
+        query = query.where(fit == "student")
     if filters.query_embedding is not None and text_hit is not None:
         near = JobPosting.embedding.is_not(None) & (
             JobPosting.embedding.cosine_distance(filters.query_embedding) <= SEMANTIC_MAX_DISTANCE

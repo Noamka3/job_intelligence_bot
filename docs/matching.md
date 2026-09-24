@@ -124,12 +124,22 @@ The read is stored on the posting at ingest (`JobPosting.seniority`,
 `experience_min_years`; `reassess-seniority` backfills) and the API
 derives a **seniority fit** per match relative to the target role's
 `max_expected_years`: `experienced` (senior-level title, or stated years
-above the ceiling), `fit` (stated years within it, or else an
-entry-level title), `unknown` (nothing readable). Stated years outrank
-the title's level - "2-3 years mandatory" under a junior-looking title
-is a requirement - and the same order drives the seniority score. The
-dashboard shows the fit as a tag on every card and filters on it; the
-default view hides `experienced`. Noam's role ceiling is 1 year.
+above the ceiling), `student` (an internship or student position),
+`fit` (stated years within it, or else an entry-level title), `unknown`
+(nothing readable). Stated years outrank the title's level - "2-3 years
+mandatory" under a junior-looking title is a requirement - and the same
+order drives the seniority score. The dashboard shows the fit as a tag on
+every card and filters on it; the default view hides `experienced` and
+`student`. Noam's role ceiling is 1 year.
+
+A student title ("Student Software Engineer", "סטודנט/ית לפיתוח
+תוכנה") is read as `INTERN`, not `JUNIOR`, and being a student
+outranks everything
+except a senior title: no amount of experience makes a student position
+open to someone who already graduated. These postings score like junior
+roles - same stack, no experience asked for - so once the skill aliases
+improved they took over the top of the list. They are tagged
+"משרת סטודנט" and live behind their own filter instead.
 - **Better embeddings underneath**: single-blob descriptions now lead
   with their recognizable requirements section (the same heading
   detection seniority uses), and the local provider embeds long texts in

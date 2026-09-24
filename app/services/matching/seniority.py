@@ -41,6 +41,10 @@ _SENIOR_TITLE_TOKENS: tuple[tuple[str, SeniorityLevel], ...] = (
 )
 
 _JUNIOR_TITLE_TOKENS: tuple[tuple[str, SeniorityLevel], ...] = (
+    # INTERN means "you have to be a student to take it" - an
+    # internship or a part-time student position, not a junior
+    # full-time role. The dashboard tags those and keeps them out of
+    # the default view (seniority_fit_expression in queries.py).
     ("internship", SeniorityLevel.INTERN),
     ("intern", SeniorityLevel.INTERN),
     ("trainee", SeniorityLevel.INTERN),
@@ -54,12 +58,12 @@ _JUNIOR_TITLE_TOKENS: tuple[tuple[str, SeniorityLevel], ...] = (
     ("early career", SeniorityLevel.JUNIOR),
     ("associate", SeniorityLevel.JUNIOR),
     ("campus", SeniorityLevel.JUNIOR),
-    ("student", SeniorityLevel.JUNIOR),
-    ("students", SeniorityLevel.JUNIOR),
+    ("student", SeniorityLevel.INTERN),
+    ("students", SeniorityLevel.INTERN),
     ("ג'וניור", SeniorityLevel.JUNIOR),
     ("ג׳וניור", SeniorityLevel.JUNIOR),
-    ("סטודנט", SeniorityLevel.JUNIOR),
-    ("סטודנטית", SeniorityLevel.JUNIOR),
+    ("סטודנט", SeniorityLevel.INTERN),
+    ("סטודנטית", SeniorityLevel.INTERN),
     ("מתחיל", SeniorityLevel.JUNIOR),
     ("מתחילה", SeniorityLevel.JUNIOR),
     ("בוגר", SeniorityLevel.JUNIOR),

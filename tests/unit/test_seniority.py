@@ -113,10 +113,14 @@ def test_software_engineer_digit_one_reads_as_junior() -> None:
 
 
 def test_student_and_hebrew_titles_are_recognized() -> None:
-    assert assess_seniority("Student Software Engineer", "").level == SeniorityLevel.JUNIOR
+    # A student position is INTERN, not JUNIOR: it is open only to people
+    # still studying, so the dashboard keeps it in its own bucket.
+    assert assess_seniority("Student Software Engineer", "").level == SeniorityLevel.INTERN
     assert assess_seniority("Software Developer - Student Position", "").level == (
-        SeniorityLevel.JUNIOR
+        SeniorityLevel.INTERN
     )
+    assert assess_seniority("סטודנט/ית לפיתוח תוכנה", "").level == SeniorityLevel.INTERN
+    assert assess_seniority("Graduate Software Engineer", "").level == SeniorityLevel.JUNIOR
     assert assess_seniority("מפתח/ת Backend בכיר/ה", "").level == SeniorityLevel.SENIOR
     assert assess_seniority("מפתח/ת Fullstack ג'וניור", "").level == SeniorityLevel.JUNIOR
     assert assess_seniority("ראש צוות פיתוח", "").level == SeniorityLevel.LEAD

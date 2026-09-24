@@ -81,7 +81,8 @@ def top_matches(
     seniority: SeniorityFilter = Query(
         "all",
         description="fit = only postings that read as entry-level; not_experienced = also "
-        "those that say nothing about experience; all = everything",
+        "those that say nothing about experience; student = only student/internship "
+        "positions, which the other two leave out; all = everything",
     ),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
