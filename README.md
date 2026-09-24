@@ -230,8 +230,11 @@ uv run ruff check . && uv run mypy app tests # lint + types
 ```
 
 [`docs/operations.md`](docs/operations.md) is the full operator's manual:
-scheduler internals, the API surface, migrations, and the environment
-problems worth knowing about before they cost you an afternoon.
+how to start it, scheduler internals, the API surface, migrations, and
+the environment problems worth knowing about before they cost you an
+afternoon — including the one that silently stops every crawl on a
+machine with a TLS-inspecting antivirus
+([`certs/README.md`](certs/README.md)).
 
 ---
 

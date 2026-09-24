@@ -14,16 +14,45 @@ quirks that cost real time to diagnose on the development machine.
   for structured CV extraction, with a deterministic fallback when it is
   unavailable or times out
 
-## Setup
+## Starting it
+
+Three steps, in this order, every time:
+
+1. **Open Docker Desktop** and wait until it says *Engine running*. Until
+   it does, `docker compose` fails with `error during connect` or
+   `unable to get image` — which means nothing started, not that
+   something is wrong with the project.
+2. **Start the containers** (Postgres, Redis, worker, scheduler):
+   ```powershell
+   cd C:\Users\97254\Desktop\Bot_career
+   docker compose up -d
+   ```
+   Expect four lines saying `Started` or `Running`.
+3. **Start the API and dashboard**:
+   ```powershell
+   uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
+   ```
+   Then open **http://127.0.0.1:8000/app/** — not `localhost`, which
+   costs 2 seconds per request while Windows tries IPv6 first.
+
+Startup takes ~20 s (the embedding model loads), then a first pass over
+all sources completes within about 10 minutes: up to 5 for the next
+dispatcher tick, ~5 for the pass itself.
+
+`[Errno 10048] only one usage of each socket address` means the server is
+**already running** — just open the link. To take it over:
+`Get-Process python | Stop-Process -Force`, then repeat step 3.
+
+Turning on *Start Docker Desktop when you sign in* makes step 1 automatic,
+so crawling resumes on every boot without you doing anything.
+
+### First-time setup
 
 ```bash
 cp .env.example .env         # defaults are correct for local development
 uv sync                      # Python dependencies into .venv
-docker compose up -d         # Postgres, Redis, worker, scheduler
 uv run alembic upgrade head  # schema
-
 cd frontend && npm install && npm run build && cd ..
-uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
 `http://127.0.0.1:8000/app/` is the dashboard; `GET /health` reports
@@ -189,6 +218,19 @@ These are machine-specific problems that were diagnosed the hard way.
 Most stem from a TLS-inspecting antivirus (Avast) on the development
 machine.
 
+**Everything looks healthy but no jobs are ever found.** The single most
+likely cause on this machine: Avast rotated its TLS-inspection root
+certificate, so the copy baked into the worker image no longer matches
+and every crawl fails with `CERTIFICATE_VERIFY_FAILED` while the
+dashboard, the scheduler and the containers all look fine. Happened on
+2026-09-24 (151 failures in 8 minutes, 0 jobs). Diagnosis and the exact
+refresh-and-rebuild steps are in **[`certs/README.md`](../certs/README.md)** —
+start there before suspecting anything else. Quick check:
+
+```powershell
+docker compose exec -T postgres psql -U job_bot -d job_bot -c "select status, count(*) from crawl_runs where started_at > now() - interval '15 minutes' group by 1"
+```
+
 **Any HTTPS call crashes with `OPENSSL_Uplink(...): no OPENSSL_Applink`.**
 Avast sets `SSLKEYLOGFILE` to one of its internal named pipes
 (`\\.\aswMonFltProxy\...`); Python's `ssl` module crashes trying to open
@@ -202,12 +244,13 @@ different layer: its root certificate is not in the `certifi` bundle pip
 uses. Use `uv`, which respects the Windows certificate store.
 
 **`docker compose build worker` fails the same way.** Container traffic
-goes through the same inspection. `certs/` (see `certs/README.md`) holds
+goes through the same inspection. [`certs/`](../certs/README.md) holds
 the CA certificates the build installs into the image's trust store, with
 `PIP_CERT`/`SSL_CERT_FILE` pointed at it. The browser fallback needs two
 more: `NODE_EXTRA_CA_CERTS` for Playwright's Node downloader, and the
 certificate registered in Chromium's own NSS store, or every rendered
 page fails with `ERR_CERT_AUTHORITY_INVALID`. Both are in the Dockerfile.
+Refreshing the certificate and rebuilding covers all three.
 
 **`alembic upgrade head` fails with an auth error against localhost.**
 Something else is listening on the port. Check with
