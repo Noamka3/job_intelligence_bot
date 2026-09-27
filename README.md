@@ -1,8 +1,8 @@
 # Job Intelligence Bot
 
-I'm looking for my first developer job. Job boards are late, repetitive,
-and their "junior" filter is useless when a posting titled *Full Stack
-Developer* asks for "2-3 years, mandatory".
+Job boards are late, repetitive, and their "junior" filter is useless
+when a posting titled *Full Stack Developer* asks for "2-3 years,
+mandatory".
 
 So this watches the career pages of 242 Israeli tech companies directly,
 finds new postings within minutes, and scores each one against my CV.
@@ -65,8 +65,8 @@ gate reads the title, multiplies everything else by how much the job
 
 Seniority is read in Hebrew and English, from the requirements section
 only: `3-5 שנות ניסיון` resolves to 3, and stated years beat the title.
-Student positions get their own tag — I have a degree, so they're not
-jobs I can take.
+Student positions get their own tag: they require being enrolled, which
+is not the same thing as junior.
 
 Every match carries its reasons and concerns in plain language.
 [`docs/matching.md`](docs/matching.md) has the measurements behind each weight.
