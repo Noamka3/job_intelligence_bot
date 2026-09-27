@@ -17,6 +17,7 @@ from app.models.enums import JobStatus
 from app.models.job_posting import JobPosting
 from app.models.target_role import TargetRole
 from app.services.candidate.profile_service import get_active_profile
+from app.services.jev import JUDGED_ABOVE_ROLE_FIT, judge_fit, needs_judgement
 from app.services.matching.persistence import save_match
 from app.services.matching.scoring import candidate_skill_set, compute_match
 
@@ -41,7 +42,9 @@ def _score_job_for(
     count = 0
     for target_role in target_roles:
         result = compute_match(candidate, target_role, job, candidate_skills=candidate_skills)
-        save_match(db, candidate.id, target_role.id, job.id, result)
+        match = save_match(db, candidate.id, target_role.id, job.id, result)
+        if result.role_score >= JUDGED_ABOVE_ROLE_FIT and needs_judgement(match, job):
+            match.jev_fit = judge_fit(candidate, job)
         count += 1
     return count
 

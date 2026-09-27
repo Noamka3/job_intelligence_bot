@@ -53,6 +53,7 @@ def _to_read(row: MatchRow) -> MatchRead:
         seniority_fit=row.seniority_fit,
         job_seniority=job.seniority,
         experience_min_years=job.experience_min_years,
+        jev_fit=match.jev_fit,
     )
 
 

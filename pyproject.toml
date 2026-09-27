@@ -31,6 +31,7 @@ dependencies = [
     "ollama>=0.4",
     "celery>=5.4",
     "playwright>=1.48",
+    "typesafe-sdk>=0.7.2",
 ]
 
 [project.optional-dependencies]

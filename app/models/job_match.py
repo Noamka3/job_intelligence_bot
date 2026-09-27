@@ -13,7 +13,7 @@ from app.models.mixins import TimestampMixin
 class JobMatch(Base, TimestampMixin):
     """The hybrid-scoring result for one (candidate profile, target role,
     job) triple. Recomputed in place (not appended) when any input changes,
-    enforced by the unique constraint below - see spec section 25/26.
+    enforced by the unique constraint below.
     """
 
     __tablename__ = "job_matches"
@@ -49,6 +49,10 @@ class JobMatch(Base, TimestampMixin):
 
     reasons: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
     concerns: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
+    # Jev's judgement of the CV for this posting (app/services/jev/fit.py),
+    # with the posting's content hash; None below the role gate or with
+    # Jev off. Shown, not yet ranked on.
+    jev_fit: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
 
     def __repr__(self) -> str:
         return f"JobMatch(job_id={self.job_id!r}, final_score={self.final_score!r})"

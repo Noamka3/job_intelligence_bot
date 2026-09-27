@@ -17,6 +17,14 @@ from app.services.candidate.normalization import normalize_text
 from app.services.candidate.profile_service import get_active_profile
 from app.services.candidate.structured_profile import extract_structured_profile
 from app.services.embeddings import get_embedding_provider
+from app.services.jev import (
+    JUDGED_ABOVE_ROLE_FIT,
+    is_enabled,
+    judge_fit,
+    needs_judgement,
+    needs_reading,
+    read_posting,
+)
 from app.services.jobs.ingestion import crawl_source, get_due_sources
 from app.services.matching.runner import score_all_active_jobs
 from app.services.sheets.company_sync import (
@@ -312,6 +320,57 @@ def score_all() -> None:
 
         matches_written = score_all_active_jobs(db)
         typer.echo(f"Wrote/updated {matches_written} match(es).")
+
+
+@app.command("jev-backfill")
+def jev_backfill() -> None:
+    """Ask Jev about every stored posting it has not read, and about
+    every match above the role gate it has not judged. New postings get
+    both as they are crawled; this covers what was there before the key.
+    """
+    from app.models.job_match import JobMatch
+    from app.models.job_posting import JobPosting
+
+    if not is_enabled():
+        typer.echo("TYPESAFE_API_KEY is not set - nothing to do.", err=True)
+        raise typer.Exit(code=1)
+    session_factory = get_session_factory()
+    with session_factory() as db:
+        candidate = get_active_profile(db)
+        if candidate is None:
+            typer.echo("No active candidate profile - upload a resume first.", err=True)
+            raise typer.Exit(code=1)
+
+        jobs = db.execute(select(JobPosting).where(JobPosting.status == JobStatus.ACTIVE)).scalars()
+        read = 0
+        for index, job in enumerate((j for j in jobs if needs_reading(j)), start=1):
+            job.jev_reading = read_posting(job)
+            read += job.jev_reading is not None
+            if index % 100 == 0:
+                db.commit()
+                typer.echo(f"  read {index} postings...")
+        db.commit()
+
+        rows = db.execute(
+            select(JobMatch, JobPosting)
+            .join(JobPosting, JobMatch.job_id == JobPosting.id)
+            .where(
+                JobMatch.candidate_profile_id == candidate.id,
+                JobMatch.role_score >= JUDGED_ABOVE_ROLE_FIT,
+                JobPosting.status == JobStatus.ACTIVE,
+            )
+        ).all()
+        judged = 0
+        for index, (match, job) in enumerate(
+            ((m, j) for m, j in rows if needs_judgement(m, j)), start=1
+        ):
+            match.jev_fit = judge_fit(candidate, job)
+            judged += match.jev_fit is not None
+            if index % 100 == 0:
+                db.commit()
+                typer.echo(f"  judged {index} matches...")
+        db.commit()
+    typer.echo(f"Read {read} posting(s), judged {judged} match(es).")
 
 
 if __name__ == "__main__":

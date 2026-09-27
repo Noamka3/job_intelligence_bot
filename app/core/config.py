@@ -172,6 +172,15 @@ class Settings(BaseSettings):
     semantic_intent_floor: float = 0.10
     semantic_intent_ceiling: float = 0.50
 
+    # --- Jev, TypeSafe's decision model (app/services/jev/, docs/jev.md) ---
+    # An empty key turns it off, which is how the tests and a fresh clone
+    # run. With a key, every new posting is read once and every match
+    # above the role gate is judged once; both are stored and shown, and
+    # neither touches the ranking until the reads have been measured
+    # against real feedback. Pinned to a version: "jev-latest" moves.
+    typesafe_api_key: str = ""
+    jev_model: str = "jev-1.13.0"
+
     # --- Twilio WhatsApp (Phase 7) ---
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""

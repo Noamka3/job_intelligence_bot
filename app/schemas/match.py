@@ -1,11 +1,20 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
 from app.models.enums import CareerSourceType, JobFeedbackAction, SeniorityLevel
 from app.services.matching.queries import SeniorityFit
+
+
+class JevFit(BaseModel):
+    model: str
+    would_be_considered: float
+    skills_coverage: float
+    experience_level: Literal["below", "matches", "above"]
+    experience_level_confidence: float
 
 
 class MatchRead(BaseModel):
@@ -43,3 +52,6 @@ class MatchRead(BaseModel):
     seniority_fit: SeniorityFit
     job_seniority: SeniorityLevel
     experience_min_years: int | None
+    # Jev's judgement of the CV for this posting, when it was asked
+    # (above the role gate, key set) - see docs/jev.md.
+    jev_fit: JevFit | None

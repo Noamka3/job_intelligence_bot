@@ -8,6 +8,7 @@ import {
   externalHref,
   formatDate,
   relativeTime,
+  jevFitDetail,
   seniorityFitDetail,
 } from "../lib/format";
 import { CompanyTag } from "./CompanyTag";
@@ -70,6 +71,20 @@ export function MatchCard({
           >
             {SENIORITY_FIT_LABELS[match.seniority_fit]}
           </Pill>
+          {match.jev_fit && (
+            <Pill
+              tone={
+                match.jev_fit.would_be_considered >= 0.7
+                  ? "good"
+                  : match.jev_fit.would_be_considered <= 0.3
+                    ? "bad"
+                    : "neutral"
+              }
+              title={jevFitDetail(match.jev_fit)}
+            >
+              Jev {Math.round(match.jev_fit.would_be_considered * 100)}%
+            </Pill>
+          )}
           {match.location_text && <span className="bidi">{match.location_text}</span>}
           {match.location_text && <span className="dot" />}
           <span className="faint">{SOURCE_LABELS[match.source_type]}</span>

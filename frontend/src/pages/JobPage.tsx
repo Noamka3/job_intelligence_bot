@@ -8,6 +8,7 @@ import { Pill, ScoreBadge, Skeletons } from "../components/ui";
 import { useAsync } from "../hooks/useAsync";
 import {
   COMPONENT_LABELS,
+  JEV_EXPERIENCE_LABELS,
   SOURCE_LABELS,
   externalHref,
   formatDate,
@@ -161,6 +162,14 @@ export function JobPage() {
                   {concern}
                 </Pill>
               ))}
+            </div>
+          )}
+          {m.jev_fit && (
+            <div className="muted" style={{ marginTop: 16 }}>
+              <strong>דעה שנייה (Jev, {m.jev_fit.model}):</strong> מגייס היה שוקל אותך 
+              {Math.round(m.jev_fit.would_be_considered * 100)}% · כיסוי כישורים 
+              {Math.round(m.jev_fit.skills_coverage * 10) / 10}/4 ·{" "}
+              {JEV_EXPERIENCE_LABELS[m.jev_fit.experience_level]}. לא משפיע על הציון.
             </div>
           )}
         </section>

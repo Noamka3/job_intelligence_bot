@@ -70,6 +70,17 @@ export interface Match {
   seniority_fit: SeniorityFit;
   job_seniority: SeniorityLevel;
   experience_min_years: number | null;
+  // Jev's judgement of the CV for this posting, when it was asked
+  // (above the role gate, key set) - a second opinion, not ranked on.
+  jev_fit: JevFit | null;
+}
+
+export interface JevFit {
+  model: string;
+  would_be_considered: number; // 0-1
+  skills_coverage: number; // 0-4, expected rubric level
+  experience_level: "below" | "matches" | "above";
+  experience_level_confidence: number;
 }
 
 export type SeniorityFit = "fit" | "unknown" | "experienced" | "student";

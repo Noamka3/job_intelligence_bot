@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
@@ -15,6 +16,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -115,6 +117,9 @@ class JobPosting(Base, TimestampMixin):
 
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     embedding: Mapped[list[float] | None] = mapped_column(Vector(EMBEDDING_DIM))
+    # Jev's reading of the posting (app/services/jev/reading.py), with
+    # the content hash it was given; None until Jev is on and has read it.
+    jev_reading: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
 
     def __repr__(self) -> str:
         return f"JobPosting(id={self.id!r}, title={self.title!r}, status={self.status!r})"

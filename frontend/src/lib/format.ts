@@ -1,4 +1,5 @@
 import type {
+  JevFit,
   ApplicationStatus,
   CrawlRunStatus,
   FeedbackAction,
@@ -89,6 +90,18 @@ export function seniorityFitDetail(match: Match): string {
   }
   if (match.seniority_fit === "fit") return "כותרת של משרת התחלה";
   return "המשרה לא מציינת דרישת ניסיון";
+}
+
+export const JEV_EXPERIENCE_LABELS: Record<JevFit["experience_level"], string> = {
+  below: "דורשת יותר ניסיון ממה שיש לך",
+  matches: "רמת הניסיון מתאימה",
+  above: "יש לך יותר ניסיון ממה שצריך",
+};
+
+/** Jev's three answers in one line, for the card's tooltip. */
+export function jevFitDetail(fit: JevFit): string {
+  const coverage = Math.round(fit.skills_coverage * 10) / 10;
+  return `מגייס היה שוקל אותך: ${Math.round(fit.would_be_considered * 100)}% · כיסוי כישורים ${coverage}/4 · ${JEV_EXPERIENCE_LABELS[fit.experience_level]}`;
 }
 
 export const FEEDBACK_LABELS: Record<FeedbackAction, string> = {

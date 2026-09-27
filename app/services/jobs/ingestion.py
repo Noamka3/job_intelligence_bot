@@ -35,6 +35,7 @@ from app.models.crawl_run import CrawlRun
 from app.models.enums import CareerSourceType, CrawlRunStatus, JobStatus
 from app.models.job_posting import JobPosting
 from app.services.embeddings.base import EmbeddingProvider
+from app.services.jev import needs_reading, read_posting
 from app.services.jobs.location import classify_country, classify_region
 from app.services.jobs.normalization import (
     build_embedding_text,
@@ -208,6 +209,7 @@ def crawl_source(
                 new_job = _create_job(db, source, fetched)
                 existing_jobs[stub.external_job_id] = new_job
                 created += 1
+                _read_with_jev(new_job)
                 score_job(db, new_job)
             else:
                 _mark_seen(existing)
@@ -216,6 +218,7 @@ def crawl_source(
                     # Only rescore when the content actually changed enough
                     # to re-embed - never re-run matching on unchanged
                     # jobs.
+                    _read_with_jev(existing)
                     score_job(db, existing)
             db.commit()
     except Exception as exc:
@@ -375,6 +378,13 @@ def assess_job_seniority(
     the dashboard's "fits a junior" tag and filter use) and recomputed by
     the scorer from the same fields."""
     return assess_seniority(title, qualifications or normalized_description or "")
+
+
+def _read_with_jev(job: JobPosting) -> None:
+    """Best-effort, like the LLM step of a CV upload: a failed or
+    disabled read leaves the column as it was and the crawl goes on."""
+    if needs_reading(job):
+        job.jev_reading = read_posting(job)
 
 
 def _create_job(db: Session, source: CareerSource, fetched: _FetchedJob) -> JobPosting:

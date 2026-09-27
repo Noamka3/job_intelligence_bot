@@ -244,10 +244,23 @@ threshold, deduplicated per job through `notification_logs`.
 | Structured CV extraction | `llama3.2:3b` through Ollama | my machine | free |
 | Semantic search in the dashboard | same embedding model, query embedded on the fly | my machine | free |
 | Scoring | hybrid: rules for role, seniority and skills, embeddings for similarity | my machine | free |
+| Second opinion on every posting and match | [Jev](docs/jev.md), TypeSafe's decision model: typed answers with probabilities, not text | TypeSafe's API, optional | ~$0.30 for the whole database, then cents |
 
 OpenAI is wired in behind two environment variables for anyone who wants
 better embeddings or a stronger extraction model. I do not use it: the
 whole point was zero running cost and a CV that stays local.
+
+Jev is the one exception, and a deliberate one. It is a new kind of
+model (September 2026) that answers typed questions with calibrated
+probabilities instead of generating text, which is exactly the shape of
+the decisions this pipeline makes with hand-written rules: what kind of
+role is this, what level, would a recruiter shortlist me. It runs beside
+the rules, its answers are stored and shown on every card, and it gets
+no weight in the score until it has been measured against my own
+feedback - on Hebrew postings too, where the vendor says accuracy is
+lower. [`docs/jev.md`](docs/jev.md) has the questions, the cost, the
+privacy trade-off (the CV text leaves the machine when the key is set)
+and the plan for promoting it.
 
 ---
 
