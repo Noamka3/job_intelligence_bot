@@ -115,6 +115,44 @@ took its share; `JEV_WEIGHT=0` puts them back.
 
 ---
 
+## How it's laid out
+
+```
+app/
+  api/routes/     HTTP endpoints, one file per subject. Thin on purpose:
+                  they call a service and return, so the CLI and the API
+                  run the same code.
+  core/           config (the only place that reads env vars), security,
+                  logging, timezone.
+  models/         the database tables (SQLAlchemy).
+  schemas/        the JSON shapes the API speaks (Pydantic). Separate from
+                  models so an internal change can't break the dashboard.
+  services/       all the logic:
+    sheets/         Google Sheet -> companies
+    jobs/           crawling, normalizing, retention
+    matching/       the score, component by component
+    candidate/      CV parsing, versions, local LLM extraction
+    embeddings/     the provider interface, local and OpenAI
+    jev/            TypeSafe's model: reading, fit, agreement
+  ingestion/
+    resolver.py     a URL -> which adapter can read it
+    registry.py     source type -> adapter
+    adapters/       one per source: greenhouse, comeet, workday, wordpress,
+                    site_feed, generic_html, browser, ...
+  tasks/          Celery: the 5-minute dispatcher and the nightly prune.
+                  No logic of its own, only when things run.
+frontend/src/     React: pages/, components/, api/, styles/
+tests/            unit (fast, pure) + integration (real Postgres)
+alembic/versions/ every schema change, in order
+docs/             the long version of everything above
+```
+
+Dependencies point one way: `api` → `services` → `models`. Nothing goes
+back up, which is why every pipeline step is runnable from the CLI and
+testable without HTTP.
+
+---
+
 ## Running it
 
 Needs Docker, Python 3.12 with [uv](https://docs.astral.sh/uv/), Node 20,
