@@ -377,7 +377,8 @@ setup and the dependencies.
 | Response headers | `X-Content-Type-Options`, `X-Frame-Options` and `Referrer-Policy` on every response. No CORS middleware, because the dashboard is same-origin and no other site should be able to call the API. |
 | Exposure | Postgres and Redis publish their ports on `127.0.0.1` only, so a weak local password is not reachable from the network. |
 | Dependencies | `pip-audit` reports no known vulnerabilities in the app's dependencies. |
-| Authentication | Off by default, which is the right answer for a service on `127.0.0.1`. Setting `DASHBOARD_PASSWORD` turns on HTTP Basic for everything except `/health`, and that has to be on before this is exposed anywhere, behind HTTPS or Tailscale. |
+| Authentication | Off by default, which is the right answer for a service on `127.0.0.1`. Setting `DASHBOARD_PASSWORD` turns on HTTP Basic for everything except `/health`, and that has to be on before this is exposed anywhere, behind HTTPS or Tailscale. An address that fails the password 20 times in 15 minutes is locked out. |
+| CSRF | Browsers attach cached Basic credentials to requests from other sites too, so a write the browser marks as cross-site (`Sec-Fetch-Site`) is refused. There are no cookies and no sessions to fix or steal. |
 
 LinkedIn is never scraped. Its User Agreement forbids automated access
 and `hiQ Labs v. LinkedIn` was decided on contract grounds, so a row on

@@ -11,6 +11,13 @@ needs no login screen and its fetch() calls inherit the credentials.
 Basic auth sends the password on every request, so it is only meaningful
 over a channel nobody else can read: HTTPS, or a private network such as
 Tailscale. See docs/deployment notes in README.md.
+
+Two things Basic auth does not give you, added here: browsers attach
+cached Basic credentials to requests from *other* sites too, so a page
+elsewhere could submit a form to /candidate/resume in the owner's name
+(CSRF) - state-changing requests that the browser marks as cross-site
+are refused; and nothing slows a password guesser down - an address
+that keeps failing is locked out for a while.
 """
 
 from __future__ import annotations
@@ -18,6 +25,8 @@ from __future__ import annotations
 import base64
 import binascii
 import secrets
+import time
+from collections import defaultdict, deque
 from collections.abc import Awaitable, Callable
 
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -29,6 +38,16 @@ from app.core.config import Settings, get_settings
 # Liveness must stay reachable for container health checks and uptime
 # monitoring; it reports only whether Postgres and Redis answer.
 _UNPROTECTED_PATHS = frozenset({"/health"})
+
+# Browsers send Sec-Fetch-Site on every request; "cross-site" means the
+# request was made by a page on another site. Reads are harmless (the
+# response is not readable cross-origin without CORS); writes are not.
+_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+# Wrong passwords per client address before it is locked out, and for
+# how long: generous for a person, hopeless for a guesser.
+_MAX_FAILED_AUTH = 20
+_FAILED_AUTH_WINDOW_SECONDS = 15 * 60
 
 _SECURITY_HEADERS = {
     # The dashboard renders text taken from third-party career pages; a
@@ -58,27 +77,56 @@ def _credentials_match(header: str | None, settings: Settings) -> bool:
     return user_ok and password_ok
 
 
+class FailedAttempts:
+    """Recent wrong passwords per client address, in memory: the API is
+    one process, and a restart forgiving everyone is fine."""
+
+    def __init__(self) -> None:
+        self._by_client: dict[str, deque[float]] = defaultdict(deque)
+
+    def record(self, client: str) -> None:
+        self._by_client[client].append(time.monotonic())
+
+    def locked_out(self, client: str) -> bool:
+        attempts = self._by_client[client]
+        cutoff = time.monotonic() - _FAILED_AUTH_WINDOW_SECONDS
+        while attempts and attempts[0] < cutoff:
+            attempts.popleft()
+        return len(attempts) >= _MAX_FAILED_AUTH
+
+
+def _is_cross_site_write(request: Request) -> bool:
+    return (
+        request.method not in _SAFE_METHODS
+        and request.headers.get("sec-fetch-site", "").lower() == "cross-site"
+    )
+
+
 class AccessControlMiddleware(BaseHTTPMiddleware):
-    """Requires Basic credentials when DASHBOARD_PASSWORD is set, and adds
-    the hardening headers to every response either way."""
+    """Requires Basic credentials when DASHBOARD_PASSWORD is set, refuses
+    cross-site writes, and adds the hardening headers to every response."""
+
+    failed_attempts = FailedAttempts()
 
     async def dispatch(
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
     ) -> Response:
+        if _is_cross_site_write(request):
+            return Response(status_code=403, headers=_SECURITY_HEADERS)
         settings = get_settings()
-        authentication_required = bool(settings.dashboard_password)
-        if (
-            authentication_required
-            and request.url.path not in _UNPROTECTED_PATHS
-            and not _credentials_match(request.headers.get("authorization"), settings)
-        ):
-            return Response(
-                status_code=401,
-                headers={
-                    "WWW-Authenticate": 'Basic realm="Job Intelligence Bot"',
-                    **_SECURITY_HEADERS,
-                },
-            )
+        if settings.dashboard_password and request.url.path not in _UNPROTECTED_PATHS:
+            client = request.client.host if request.client else ""
+            if self.failed_attempts.locked_out(client):
+                return Response(status_code=429, headers=_SECURITY_HEADERS)
+            if not _credentials_match(request.headers.get("authorization"), settings):
+                self.failed_attempts.record(client)
+                return Response(
+                    status_code=401,
+                    headers={
+                        "WWW-Authenticate": 'Basic realm="Job Intelligence Bot"',
+                        **_SECURITY_HEADERS,
+                    },
+                )
         response = await call_next(request)
         response.headers.update(_SECURITY_HEADERS)
         return response
