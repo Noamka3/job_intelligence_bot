@@ -17,9 +17,9 @@ own machine, so there is no API bill and my CV never leaves it.
 
 ![Architecture](docs/architecture.svg)
 
-> **Status:** phases 1-9 are done and the bot runs every day. WhatsApp
-> alerts (phase 7) and moving it onto a small VPS (phase 10) are what is
-> left. See [Roadmap](#roadmap).
+> **Status:** running every day. The crawl, the matching engine, the
+> dashboard, the Jev second opinion and nightly retention are done;
+> WhatsApp alerts and a small VPS are what is left. See [Roadmap](#roadmap).
 
 ---
 
@@ -258,6 +258,8 @@ OpenAI is wired in behind two environment variables for anyone who wants
 better embeddings or a stronger extraction model. I do not use it: the
 whole point was zero running cost and a CV that stays local.
 
+### Jev: a second opinion with a share of the score
+
 Jev is the one exception, and a deliberate one. It is a new kind of
 model (September 2026) that answers typed questions with calibrated
 probabilities instead of generating text, which is exactly the shape of
@@ -282,10 +284,11 @@ Numbers from the live database, not from a sample:
 | | |
 |---|---|
 | Companies on the list | 242, of which 208 have a career page that can be read (LinkedIn URLs are never scraped) |
-| Companies currently producing jobs | 134 |
-| Active postings stored | ~5,500, about 2,400 confirmed to be in Israel |
-| Crawl runs so far | 22,000+ |
-| Tests | 399 |
+| Companies with a posting inside the ten-day window | 78 |
+| Postings listed right now | ~5,500, about 3,000 of them with their text (older ones keep only their identity, see step 5) |
+| Crawl runs so far | 36,000+ |
+| Database | 50 MB |
+| Tests | 413 |
 
 Scoring behaviour against my own CV, measured over those postings:
 developer titles that read as junior score a median of 76, senior
@@ -327,7 +330,7 @@ uv run python -m app.cli sync-sheet          # re-import the companies
 uv run python -m app.cli crawl-now           # crawl everything due, right now
 uv run python -m app.cli score-all           # rescore every active job
 uv run python -m app.cli reassess-seniority  # re-read experience requirements
-uv run pytest                                # 399 tests
+uv run pytest                                # 413 tests
 uv run ruff check . && uv run mypy app tests # lint and types
 ```
 
@@ -342,7 +345,7 @@ with a TLS-inspecting antivirus, and it has its own page in
 
 ## How it is built
 
-- **399 tests**, unit and integration, the integration ones against a
+- **413 tests**, unit and integration, the integration ones against a
   real Postgres with `pgvector`. Every bug described above has a test
   named after it.
 - **`mypy --strict`** over the app and the tests, `ruff` for lint and
@@ -414,6 +417,8 @@ These are choices, not things I forgot:
 | 8, the remaining adapters, embedded-board detection, browser fallback | done |
 | 9, React dashboard, applications pipeline, live status | done |
 | Security review | done |
+| Jev as a second reader beside the rules, measured, then weighted | done |
+| Nightly retention: nothing older than ten days keeps its text | done |
 | 7, WhatsApp alerts for strong new matches | next |
 | 10, VPS deployment, CI/CD, backups, rate limiting | planned |
 
