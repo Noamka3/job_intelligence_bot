@@ -1,8 +1,8 @@
 """EmbeddingProvider abstraction.
 
 Nothing outside this package talks to a specific embedding vendor's SDK
-directly - candidate profiles, target roles, and (from Phase 4 on) job
-postings all go through this interface, so the provider is replaceable
+directly - candidate profiles, target roles and job postings all go
+through this interface, so the provider is replaceable
 without touching business logic.
 """
 

@@ -1,4 +1,4 @@
-"""Celery tasks wrapping the Phase 4/5 ingestion + scoring logic
+"""Celery tasks wrapping the ingestion + scoring logic
 (app.services.jobs.ingestion, app.services.matching.runner). No new
 business logic here - just Celery's dispatch/retry semantics around
 functions that are already independently testable without Celery.

@@ -1,8 +1,8 @@
 """Orchestrates running the scorer across jobs / target roles and
-persisting results - what the CLI `score-all` command calls now, and what
-the crawl pipeline will call per-job from Phase 6 onward. Kept separate
-from scoring.py so the pure scoring math has no DB/session dependency and
-stays trivially unit-testable.
+persisting results - what the CLI `score-all` command calls, and what
+the crawl pipeline calls per job. Kept separate from scoring.py so the
+pure scoring math has no DB/session dependency and stays trivially
+unit-testable.
 """
 
 from __future__ import annotations

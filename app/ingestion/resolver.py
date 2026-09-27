@@ -220,7 +220,7 @@ def _extract_identifier(
         # /jobs/{human-readable-slug}/{company_uid} - e.g. /jobs/cymotive/F1.008.
         # The company_uid (segments[2]) is what the Comeet API actually
         # needs; the slug in segments[1] is cosmetic. Verified live against
-        # real companies during Phase 4 - see app/ingestion/adapters/comeet.py.
+        # real companies - see app/ingestion/adapters/comeet.py.
         # Note the ComeetAdapter itself does not trust this value for the
         # required API token (which isn't in the URL at all) and re-derives
         # both from the page directly - this is stored for display only.

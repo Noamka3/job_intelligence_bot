@@ -67,8 +67,8 @@ def get_due_sources(db: Session, limit: int | None = None) -> list[CareerSource]
     identically. Longest-overdue first (never crawled before anything
     else), so a `limit` hands out the backlog fairly across ticks.
 
-    Source types without a registered adapter yet (workday, generic_html,
-    ... until Phase 8) are left out on purpose: crawling them would only
+    Source types without a registered adapter are left out on purpose:
+    crawling them would only
     write a FAILED "NoAdapter" CrawlRun per tick and push their
     next_check_at out with exponential backoff - so once the adapter does
     land, they'd sit out up to a day before the first real crawl. Skipping

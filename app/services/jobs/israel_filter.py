@@ -1,5 +1,5 @@
 """The one SQL predicate behind every `israel_only` switch (/jobs,
-/matches/top, and Phase 7's notification query), so they can never drift
+/matches/top, and the notifications to come), so they can never drift
 from each other or from the Python classifier in location.py.
 
 Keeps: anything classified as Israel at ingest, and anything whose

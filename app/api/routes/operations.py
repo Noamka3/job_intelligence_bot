@@ -24,8 +24,8 @@ def crawl_now(
     """Crawls every due CareerSource synchronously, in-request.
 
     Runs sequentially and can take a while with many due sources - this is
-    a manual/dev trigger. Phase 6 replaces the "every 5 minutes" part of
-    this with a Celery Beat dispatcher that fans work out to a worker
+    a manual/dev trigger. The scheduler does the same work every five
+    minutes through a Celery Beat dispatcher that fans it out to a worker
     instead of blocking one HTTP request.
     """
     sources = get_due_sources(db)

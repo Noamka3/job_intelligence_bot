@@ -21,7 +21,7 @@ _TIMEOUT_SECONDS = 15.0
 _USER_AGENT = "job-intel-bot/0.1 (job source adapter; +https://github.com/)"
 # Plain company career pages (the generic adapter) frequently sit behind
 # a WAF that answers anything without a browser-looking User-Agent with
-# 403 - 8 of the real sheet's pages did in the Phase 8 survey. A normal
+# 403 - 8 of the real sheet's pages did when first surveyed. A normal
 # desktop UA is what the same person would send by opening the page.
 _BROWSER_HEADERS = {
     "User-Agent": (

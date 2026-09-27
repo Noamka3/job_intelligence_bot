@@ -6,9 +6,9 @@ directly on that one page - common for SEO (Google for Jobs). Does NOT
 follow links to separate per-job detail pages; a listing page that only
 links out to individual job pages (each with their own JSON-LD) needs
 real link-following/crawling logic that belongs with the generic HTML
-adapter (Phase 8), not here. Companies whose only JobPosting markup lives
-on per-job pages will show zero jobs from this adapter until then - a
-documented limitation, not a silent failure.
+adapter, not here. Companies whose only JobPosting markup lives on
+per-job pages show zero jobs from this adapter - a documented
+limitation, not a silent failure.
 """
 
 from __future__ import annotations
