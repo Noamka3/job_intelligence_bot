@@ -246,6 +246,15 @@ def test_negated_no_experience_phrase_is_not_a_junior_signal() -> None:
     assert assess_seniority("Backend Developer", text).level == SeniorityLevel.UNKNOWN
 
 
+def test_score_seniority_sets_student_positions_aside() -> None:
+    """A student position asks for no experience, which is not the same
+    as fitting a graduate: it scored 1.0 and led the list."""
+    assessment = assess_seniority("Software Development Student", "no experience needed")
+    score, explanation = score_seniority(assessment, max_expected_years=1)
+    assert score == 0.3
+    assert "student" in explanation
+
+
 def test_score_seniority_scales_down_with_years_gap() -> None:
     # 4 years lands in the MID bucket (not a title-level "strongly senior"
     # signal), so this exercises the gradual years-gap falloff rather than
