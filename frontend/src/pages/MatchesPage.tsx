@@ -19,12 +19,11 @@ import { relativeTime } from "../lib/format";
 const LIVE_MS = 30_000;
 
 const DEFAULT_FILTERS: MatchFilters = {
-  // Everything found or published today, whatever its score, newest
-  // first: the day's full picture, with the score ring to judge each
-  // one. Older postings and the 60%+ cut are one click away; nothing is
-  // deleted.
-  minScore: 0,
-  days: 0,
+  // Postings found or published in the last ten days that score 60 or
+  // more, newest first: the user's own cut - anything older or weaker is
+  // noise to them. There is no wider window; nothing is deleted.
+  minScore: 60,
+  days: 10,
   targetRoleId: null,
   region: null,
   israelOnly: true,
@@ -147,10 +146,9 @@ export function MatchesPage() {
           label="התאמה מינימלית"
           value={filters.minScore}
           options={[
-            { value: 0, label: "הכל" },
             { value: 60, label: "60%+" },
-            { value: 75, label: "75%+" },
-            { value: 85, label: "85%+" },
+            { value: 70, label: "70%+" },
+            { value: 80, label: "80%+" },
           ]}
           onChange={(minScore) => setFilters((f) => ({ ...f, minScore }))}
         />
@@ -171,7 +169,7 @@ export function MatchesPage() {
           options={[
             { value: 0, label: "היום" },
             { value: 3, label: "3 ימים" },
-            { value: null, label: "כל הזמן" },
+            { value: 10, label: "10 ימים" },
           ]}
           onChange={(days) => setFilters((f) => ({ ...f, days }))}
         />

@@ -245,7 +245,7 @@ export type MatchSort = "recent" | "score";
 
 export interface MatchFilters {
   minScore: number;
-  days: number | null;
+  days: number;
   targetRoleId: number | null;
   region: string | null;
   israelOnly: boolean;

@@ -57,7 +57,7 @@ export function fetchMatches(filters: MatchFilters, offset: number): Promise<Mat
     limit: String(PAGE_SIZE),
     offset: String(offset),
   });
-  if (filters.days !== null) params.set("days", String(filters.days));
+  params.set("days", String(filters.days));
   if (filters.targetRoleId !== null) params.set("target_role_id", String(filters.targetRoleId));
   if (filters.region !== null) params.set("region", filters.region);
   if (filters.query.trim()) params.set("q", filters.query.trim());

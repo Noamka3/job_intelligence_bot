@@ -225,7 +225,7 @@ Search is hybrid (AI): every word typed is looked for in titles and
 company names, and the whole query is embedded with the same model the
 jobs were embedded with, so "משהו עם AI וסטארטאפ קטן" finds jobs that
 read like that, and "backend developer" puts *Backend Developer* above
-*Developer*. Filters: seniority, minimum score, found within (today by
+*Developer*. Filters: seniority, minimum score, found within (ten days by
 default), region in Israel, target role.
 
 ### 11. Alerts (planned)
