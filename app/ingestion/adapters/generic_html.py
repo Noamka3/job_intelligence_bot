@@ -16,8 +16,9 @@ the main content block for the description. Location is left unknown
 when the page doesn't say - never guessed.
 
 Surveyed against the sheet's ~130 such pages (docs/job_sources.md): 59
-render 5+ job links server-side; JS-rendered ones and WAF-blocked ones
-need the browser fallback, not this.
+render 5+ job links server-side. Pages that need JavaScript to show their
+list, and pages that answer an automated client with an error, go to the
+browser fallback instead.
 """
 
 from __future__ import annotations

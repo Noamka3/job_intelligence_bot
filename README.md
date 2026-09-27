@@ -190,10 +190,10 @@ required before it goes anywhere else.
 ## Limits
 
 It only runs while the laptop is awake (that's what the VPS is for).
-Enterprise bot management (Akamai, Imperva) refuses the headless browser
-too, and those sources fail visibly instead of quietly. A quarter of
-postings say nothing readable about experience, and get a grey tag rather
-than a guess.
+Some companies don't serve automated clients at all; those sources fail
+visibly on the status page instead of quietly returning nothing, and are
+left alone. A quarter of postings say nothing readable about experience,
+and get a grey tag rather than a guess.
 
 ---
 

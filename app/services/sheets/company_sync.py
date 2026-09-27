@@ -205,7 +205,7 @@ def _ensure_career_source(
             )
         ).scalar_one_or_none()
     if existing is None and resolved.source_type == CareerSourceType.GENERIC_HTML:
-        # A failed probe (timeout, WAF) resolves to generic_html. A board
+        # A failed probe (timeout, refusal) resolves to generic_html. A board
         # found behind this page on an earlier sync is stored under the
         # board's own URL, so it would not be found below and would be
         # retired for a generic copy of the page - keep it instead.

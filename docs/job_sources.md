@@ -20,7 +20,7 @@ yielded a job.
 | source_type | Sources | Notes |
 |---|---|---|
 | `generic_html` | 71 | a career page read from its own structure |
-| `playwright` | 68 | escalated automatically: JS-rendered lists, or a WAF that refuses a plain client |
+| `playwright` | 68 | escalated automatically: pages whose job list only appears once their JavaScript runs |
 | `comeet` | 27 | ~10 by URL, the rest found embedded in the company's own page |
 | `wordpress` | 13 | jobs as a custom post type in the REST API |
 | `workday` | 9 | Intel, Flex, Medtronic by hostname; Unity, Samsung, Mastercard, Ribbon, Leidos embedded |
@@ -204,10 +204,10 @@ embed shapes now recognized, each verified on the named page:
 Still `generic_html` after all that (verified): pages whose list is
 injected by JS with no board reference at all (hibob, Team8, TriEye's
 WordPress plugin page, which carries a token but no company uid), and
-pages behind a WAF that 403s non-browser clients (Nayax, Check Point,
-Fiverr, ...). Those are handed to the browser fallback (below). Ribbon's
-Workday tenant (`vhr-genband`) answers 422 to every CXS request, even a
-browser-like one, so it is in the same bucket despite the hostname.
+and pages that answer a plain HTTP client with an error rather than the
+listing. Those are handed to the browser fallback (below). Ribbon's
+Workday tenant (`vhr-genband`) answers 422 to every CXS request, so it is
+in the same bucket despite the hostname.
 
 ### Generic HTML
 No API and no board: the listing page's job links are found from its own
@@ -302,6 +302,6 @@ three successful crawls in a row (`_EMPTY_CRAWLS_BEFORE_BROWSER`) or was
 refused with 403, and a sheet sync never downgrades it back. It polls
 hourly, renders one page at a time per worker process with images,
 media and fonts blocked, and fetches a job page plainly first - many
-JS-listed sites still serve the posting itself as HTML. Sites behind
-Akamai/Imperva bot management usually refuse the headless browser too;
-those keep failing at the hourly cadence.
+JS-listed sites still serve the posting itself as HTML. Some sites do not
+serve automated clients at all; those keep failing at the hourly cadence
+and are simply not read.

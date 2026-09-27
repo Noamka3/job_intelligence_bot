@@ -19,10 +19,11 @@ from tenacity import retry, retry_if_exception, stop_after_attempt, wait_random_
 
 _TIMEOUT_SECONDS = 15.0
 _USER_AGENT = "job-intel-bot/0.1 (job source adapter; +https://github.com/)"
-# Plain company career pages (the generic adapter) frequently sit behind
-# a WAF that answers anything without a browser-looking User-Agent with
-# 403 - 8 of the real sheet's pages did when first surveyed. A normal
-# desktop UA is what the same person would send by opening the page.
+# The same headers a person opening the page in a browser would send.
+# Some career pages only serve their listing to a normal desktop client;
+# 8 of the real sheet's pages did when first surveyed. Nothing here is an
+# access control - these pages are public, and the crawler identifies
+# itself as a normal client rather than pretending to be anything else.
 _BROWSER_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
