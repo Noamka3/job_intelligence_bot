@@ -57,7 +57,13 @@ def score_all_active_jobs(db: Session) -> int:
     # text every time, and the regex pass over it isn't free.
     candidate_skills = candidate_skill_set(candidate)
     jobs = (
-        db.execute(select(JobPosting).where(JobPosting.status == JobStatus.ACTIVE)).scalars().all()
+        db.execute(
+            select(JobPosting).where(
+                JobPosting.status == JobStatus.ACTIVE, JobPosting.archived_at.is_(None)
+            )
+        )
+        .scalars()
+        .all()
     )
     total_matches = 0
     for index, job in enumerate(jobs, start=1):

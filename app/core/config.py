@@ -127,6 +127,11 @@ class Settings(BaseSettings):
     # fetched at once - this only bounds how long an edit to an existing
     # posting's text can go unnoticed.
     job_details_refresh_hours: int = 24
+    # The dashboard's widest window, and how long a posting keeps its
+    # text and vector: past this, retention archives or deletes it
+    # (app/services/jobs/retention.py). The frontend's "10 days" option
+    # is the same number.
+    job_retention_days: int = 10
 
     # --- Ingestion ---
     # Country to ask a source for server-side, where its API supports a

@@ -9,6 +9,7 @@ README's Celery troubleshooting entry.
 from __future__ import annotations
 
 from celery import Celery
+from celery.schedules import crontab
 from celery.signals import worker_process_init
 
 from app.core.config import get_settings
@@ -20,7 +21,7 @@ settings = get_settings()
 celery_app = Celery(
     "job_intel_bot",
     broker=settings.redis_url,
-    include=["app.tasks.crawlers"],
+    include=["app.tasks.crawlers", "app.tasks.retention"],
 )
 
 celery_app.conf.update(
@@ -40,11 +41,19 @@ celery_app.conf.update(
     # container (an embedded worker, see docker-compose.yml); the crawl
     # worker consumes only the default queue.
     task_default_queue=CRAWL_QUEUE,
-    task_routes={"app.tasks.crawlers.dispatch_due_sources": {"queue": SCHEDULER_QUEUE}},
+    task_routes={
+        "app.tasks.crawlers.dispatch_due_sources": {"queue": SCHEDULER_QUEUE},
+        "app.tasks.retention.prune_postings": {"queue": SCHEDULER_QUEUE},
+    },
     beat_schedule={
         "dispatch-due-sources": {
             "task": "app.tasks.crawlers.dispatch_due_sources",
             "schedule": settings.default_poll_minutes * 60,
+        },
+        # Retention, once a night (01:00 in Israel), when nothing is watching.
+        "prune-postings": {
+            "task": "app.tasks.retention.prune_postings",
+            "schedule": crontab(hour=22, minute=0),
         },
     },
 )

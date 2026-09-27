@@ -135,6 +135,25 @@ either, recreate the volume (`docker volume rm bot_career_fastembed_cache`)
 — a volume first mounted by an older image is root-owned and the first
 download fails with `EACCES`.
 
+## Retention
+
+Ten days after a posting appeared it is outside the dashboard's widest
+window, so a nightly task (`prune_postings`, 01:00 Israel time, on the
+scheduler queue) trims the database to what the windows can show:
+
+- An **active** posting past the window is *archived*: its text,
+  embedding, Jev reading and matches go, its row stays. That row is
+  what lets the next crawl recognise the link instead of importing it
+  again as "found today" - deleting it would make every still-listed
+  old posting reappear as new every ten days. A listing that reports
+  the posting updated downloads it again and the content comes back.
+- A **closed** posting past the window is deleted.
+- A posting with feedback or an application is never touched.
+
+`JOB_RETENTION_DAYS` (10) is the window; `uv run python -m app.cli prune`
+runs the same thing on demand and prints the counts. Measured before
+this existed: the whole database was 160 MB, 139 MB of it postings.
+
 ## Tests, linting, migrations
 
 Integration tests use a real Postgres with `pgvector` (they exercise real
@@ -173,6 +192,7 @@ uv run python -m app.cli reclassify-locations  # recompute country/region
 uv run python -m app.cli apply-poll-intervals  # re-apply per-type intervals
 uv run python -m app.cli rebuild-profile       # re-extract + re-embed the active CV
 uv run python -m app.cli reembed               # re-embed jobs and roles
+uv run python -m app.cli prune                 # archive/delete postings past the window
 ```
 
 `reresolve-sources` is the one to run after a resolver change: it re-runs

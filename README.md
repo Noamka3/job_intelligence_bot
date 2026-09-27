@@ -118,10 +118,17 @@ stable id. A content hash decides whether anything actually changed, so
 an unchanged posting is never re-embedded or re-scored. A job that
 disappears from a listing is not closed right away: it has to be missing
 from `JOB_MISSING_THRESHOLD` consecutive *successful* crawls first,
-because one crawl can drop a job through a pagination hiccup. Closed jobs
-keep their history. `source_published_at` (what the ATS says) and
-`first_seen_at` (when my bot noticed) are separate columns and never
-substituted for each other.
+because one crawl can drop a job through a pagination hiccup. `source_published_at` (what the ATS says) and `first_seen_at`
+(when my bot noticed) are separate columns and never substituted for
+each other.
+
+Nothing older than ten days is shown, so nothing older than ten days
+needs its text: a nightly job empties such postings of their text and
+vector and deletes closed ones. The emptied row stays, because it is
+what tells the crawler that a link it sees again is not new: delete
+it and every still-listed old posting would come back as "found
+today" on the next crawl. Anything I gave feedback on or applied to
+is kept whole.
 
 ### 6. Turning text into vectors (AI)
 

@@ -26,6 +26,7 @@ from app.services.jev import (
     read_posting,
 )
 from app.services.jobs.ingestion import crawl_source, get_due_sources
+from app.services.jobs.retention import prune_postings
 from app.services.matching.runner import score_all_active_jobs
 from app.services.sheets.company_sync import (
     normalize_company_name,
@@ -130,7 +131,11 @@ def reassess_seniority() -> None:
     session_factory = get_session_factory()
     with session_factory() as db:
         changed = 0
-        jobs = db.execute(select(JobPosting).where(JobPosting.status == JobStatus.ACTIVE)).scalars()
+        jobs = db.execute(
+            select(JobPosting).where(
+                JobPosting.status == JobStatus.ACTIVE, JobPosting.archived_at.is_(None)
+            )
+        ).scalars()
         for job in jobs:
             assessment = assess_job_seniority(
                 job.title, job.qualifications, job.normalized_description
@@ -275,7 +280,11 @@ def reembed() -> None:
             role.embedding = provider.embed_one(role_embedding_text(role))
         db.commit()
 
-        jobs = db.execute(select(JobPosting).where(JobPosting.status == JobStatus.ACTIVE)).scalars()
+        jobs = db.execute(
+            select(JobPosting).where(
+                JobPosting.status == JobStatus.ACTIVE, JobPosting.archived_at.is_(None)
+            )
+        ).scalars()
         done = 0
         for job in jobs:
             details = JobDetails(
@@ -322,6 +331,17 @@ def score_all() -> None:
         typer.echo(f"Wrote/updated {matches_written} match(es).")
 
 
+@app.command("prune")
+def prune() -> None:
+    """Archive postings past the retention window (text and vector go,
+    the row stays so the crawler knows the link) and delete closed ones.
+    Runs nightly by itself; this is the same thing on demand.
+    """
+    with get_session_factory()() as db:
+        result = prune_postings(db)
+    typer.echo(f"Archived {result.archived} posting(s), deleted {result.deleted} closed one(s).")
+
+
 @app.command("jev-backfill")
 def jev_backfill() -> None:
     """Ask Jev about every stored posting it has not read, and about
@@ -341,7 +361,11 @@ def jev_backfill() -> None:
             typer.echo("No active candidate profile - upload a resume first.", err=True)
             raise typer.Exit(code=1)
 
-        jobs = db.execute(select(JobPosting).where(JobPosting.status == JobStatus.ACTIVE)).scalars()
+        jobs = db.execute(
+            select(JobPosting).where(
+                JobPosting.status == JobStatus.ACTIVE, JobPosting.archived_at.is_(None)
+            )
+        ).scalars()
         read = 0
         for index, job in enumerate((j for j in jobs if needs_reading(j)), start=1):
             job.jev_reading = read_posting(job)

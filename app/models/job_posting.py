@@ -109,6 +109,11 @@ class JobPosting(Base, TimestampMixin):
     # is younger than JOB_DETAILS_REFRESH_HOURS is not fetched again (see
     # ingestion._is_definitely_unchanged).
     details_fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # When retention emptied this posting of its text, embedding and
+    # matches (app/services/jobs/retention.py): the row stays so the
+    # crawler knows the link, and only a listing that reports it updated
+    # brings the content back. NULL while the content is here.
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     status: Mapped[JobStatus] = mapped_column(
         Enum(JobStatus, name="job_status"), nullable=False, default=JobStatus.ACTIVE, index=True

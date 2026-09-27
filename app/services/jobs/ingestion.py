@@ -365,7 +365,11 @@ def _embed(
     half-updated with a stale embedding."""
     embedding_text = build_embedding_text(details)
     content_hash = content_hash_for(embedding_text)
-    if existing is not None and content_hash == existing.content_hash:
+    if (
+        existing is not None
+        and content_hash == existing.content_hash
+        and existing.archived_at is None
+    ):
         return _FetchedJob(details, content_hash, None)
     return _FetchedJob(details, content_hash, embedding_provider.embed_one(embedding_text))
 
@@ -444,6 +448,11 @@ def _is_definitely_unchanged(existing: JobPosting, stub: JobStub) -> bool:
         return stub.source_updated_at <= existing.source_updated_at
     if existing.status == JobStatus.CLOSED or existing.details_fetched_at is None:
         return False
+    if existing.archived_at is not None:
+        # Its text is gone on purpose (retention). A listing timestamp the
+        # check above could not compare is a reason to read it again; a
+        # listing without one is not.
+        return stub.source_updated_at is None
     refresh_after = timedelta(hours=get_settings().job_details_refresh_hours)
     return utc_now() - existing.details_fetched_at < refresh_after
 
@@ -477,6 +486,7 @@ def _apply_update(existing: JobPosting, fetched: _FetchedJob) -> bool:
     existing.source_published_at = details.source_published_at
     existing.source_updated_at = details.source_updated_at
     existing.details_fetched_at = utc_now()
+    existing.archived_at = None
 
     if fetched.embedding is None:
         return False
