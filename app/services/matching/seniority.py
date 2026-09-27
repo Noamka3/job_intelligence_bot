@@ -10,6 +10,7 @@ matching inside "Assurance".
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass
 
@@ -108,8 +109,9 @@ _HEBREW_WORD_NUMBERS = {
     "עשר": 10,
     "עשרה": 10,
 }
-_NUMBER = r"(\d+|" + "|".join(_WORD_NUMBERS) + r")"
-_YEARS = r"years?'?"
+_NUMBER = r"(\d+(?:\.\d)?|" + "|".join(_WORD_NUMBERS) + r")"
+# "years", "years'", "year's" - with either apostrophe.
+_YEARS = r"year(?:s|[’']s|s[’'])?"
 # (?<!\w)/(?!\w) rather than \b: "חמש" must not match inside "וחמש", and
 # "3" must not match inside "13".
 _HE_NUMBER = r"(?<!\w)(\d+|" + "|".join(_HEBREW_WORD_NUMBERS) + r")(?!\w)"
@@ -123,6 +125,14 @@ _RANGE_PATTERNS: list[tuple[re.Pattern[str], bool]] = [
     (re.compile(rf"{_NUMBER}\s*(?:-|–|to)\s*(?:\d+|[a-z]+)\s*{_YEARS}", re.IGNORECASE), False),
     (re.compile(rf"{_HE_NUMBER}\s*(?:-|–|עד)\s*\d+\s*{_HE_YEARS}"), True),
 ]
+# What follows "N years" when the years are a requirement: "of
+# experience", "of proven record in", "hands-on test automation
+# experience", "in managing", "as a developer", "with Python". Up to
+# three words may sit between the years and this.
+_EXPERIENCE_NOUN = (
+    r"(?:experience|exp\b|record|success|background|work(?:ing)?\b"
+    r"|in\b|as\b|with\b|developing|building|managing|leading|writing)"
+)
 _SINGLE_PATTERNS: list[tuple[re.Pattern[str], bool]] = [
     (re.compile(rf"{_NUMBER}\s*\+\s*{_YEARS}", re.IGNORECASE), False),
     (
@@ -134,9 +144,7 @@ _SINGLE_PATTERNS: list[tuple[re.Pattern[str], bool]] = [
     ),
     (
         re.compile(
-            rf"{_NUMBER}\s*{_YEARS}\s*(?:of\s*)?"
-            r"(?:relevant\s*|hands-on\s*|professional\s*|proven\s*|practical\s*|prior\s*)?"
-            r"(?:experience|exp\b)",
+            rf"{_NUMBER}\s*\+?\s*{_YEARS}\s*(?:of\s+)?(?:[\w/'’-]+\s+){{0,3}}?{_EXPERIENCE_NOUN}",
             re.IGNORECASE,
         ),
         False,
@@ -156,6 +164,12 @@ _HE_ONE_TWO = {"שנה": 1, "שנתיים": 2}
 # "ניסיון" is nearby; English postings say "years" mostly in that sense
 # already, Hebrew ones also give the length of a degree in years.
 _HE_CONTEXT_CHARS = 60
+# An English "N years" that is not a requirement: age, company history,
+# time left in a degree. Checked on the match and the words after it.
+_NOT_A_REQUIREMENT_RE = re.compile(
+    r"\b(?:old|of age|ago|in a row|remaining|left|graduation)\b", re.IGNORECASE
+)
+_EN_CONTEXT_CHARS = 30
 
 # Postings that say, in so many words, that experience is not required.
 # Read from the requirements section only, and only when no explicit
@@ -181,11 +195,14 @@ _MAX_PLAUSIBLE_YEARS = 15
 # asks of the candidate. Most ATS descriptions (Greenhouse, Lever, Ashby,
 # JSON-LD) arrive as one HTML blob with no structured requirements field,
 # so this is the only way to keep "15 years in cybersecurity" from the
-# company intro out of the experience-requirement scan.
+# company intro out of the experience-requirement scan. "Preferred
+# qualifications" is deliberately not here: it follows the required ones,
+# and starting the section there lost "4+ years of DevOps experience".
 _REQUIREMENTS_HEADING = re.compile(
     r"^\s*(?:"
-    r"requirements?|qualifications?|minimum qualifications?|basic qualifications?"
-    r"|what you(?:'ll| will)? (?:need|bring)|what we(?:'re| are) looking for"
+    r"requirements?|(?:required |minimum |basic )?qualifications?|all you need"
+    r"|what(?:'s| is) needed|what you(?:'ll| will)? (?:need|bring)|what we(?:'re| are) looking for"
+    r"|experience (?:and|&) skills"
     r"|who you are|about you|your profile|your experience|your background"
     r"|skills?(?: (?:and|&) (?:experience|qualifications?))?|must[- ]haves?"
     r"|you (?:have|bring|are)|we(?:'re| are) looking for"
@@ -222,8 +239,9 @@ def _title_signal(title: str) -> tuple[SeniorityLevel, str] | None:
 
 
 def _as_years(token: str) -> int:
-    if token.isdigit():
-        return int(token)
+    if token[0].isdigit():
+        # "1.5 years" asks for more than one year, so it rounds up.
+        return math.ceil(float(token))
     return _WORD_NUMBERS.get(token.lower()) or _HEBREW_WORD_NUMBERS[token]
 
 
@@ -247,6 +265,10 @@ def extract_min_years_required(text: str) -> int | None:
     def collect(pattern: re.Pattern[str], hebrew: bool) -> None:
         for match in pattern.finditer(scope):
             if hebrew and not _mentions_experience_nearby(scope, match):
+                continue
+            if not hebrew and _NOT_A_REQUIREMENT_RE.search(
+                scope[match.start() : match.end() + _EN_CONTEXT_CHARS]
+            ):
                 continue
             years = _as_years(match.group(1))
             if years <= _MAX_PLAUSIBLE_YEARS:

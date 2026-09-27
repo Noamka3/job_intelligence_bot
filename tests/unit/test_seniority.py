@@ -107,6 +107,45 @@ def test_spelled_out_numbers_and_apostrophes_are_understood() -> None:
     assert extract_min_years_required("more than two years of hands-on experience") == 2
 
 
+def test_years_are_read_when_the_noun_is_not_experience() -> None:
+    """Live: Papaya's "2 years of proven record in server applications"
+    was tagged "experience not stated" at 60%."""
+    assert extract_min_years_required("2 years of proven record in server applications") == 2
+    assert extract_min_years_required("3 years of proven success in a Deal Desk function") == 3
+    assert extract_min_years_required("5 years in managing Customer Success teams") == 5
+    assert extract_min_years_required("+2 years of hands-on test automation experience") == 2
+    assert extract_min_years_required("5 year’s hands-on experience") == 5
+    assert extract_min_years_required("5 years minimum experience in verification") == 5
+    # "1.5 years" asks for more than one year.
+    assert extract_min_years_required("At least 1.5 years of AE sales experience") == 2
+
+
+def test_years_that_are_not_a_requirement_are_ignored() -> None:
+    assert extract_min_years_required("Must be at least 21 years old") is None
+    assert extract_min_years_required("Just 2 years ago, Wolt operated in 4 countries") is None
+    assert extract_min_years_required("at least 2 years remaining until graduation") is None
+    assert extract_min_years_required("At least 2 years of studies remaining") is None
+    assert extract_min_years_required("NAMED GREAT PLACE TO WORK FOR 6 YEARS IN A ROW") is None
+
+
+def test_preferred_qualifications_do_not_start_the_requirements_section() -> None:
+    """Live: recognising "Preferred Qualifications" as a heading moved the
+    section past the required block above it."""
+    text = (
+        "Must Have: Minimum Requirements (these must be evident on your resume)\n"
+        "At least 4+ years of DevOps experience\n"
+        "Preferred Qualifications:\n"
+        "2 years with Kubernetes"
+    )
+    assert extract_min_years_required(text) == 4
+    text = (
+        "We have spent more than 15 years developing driver assistance systems.\n"
+        "All you need is:\n"
+        "5 years of experience in verification"
+    )
+    assert extract_min_years_required(text) == 5
+
+
 def test_software_engineer_digit_one_reads_as_junior() -> None:
     assert assess_seniority("Software Engineer 1", "").level == SeniorityLevel.JUNIOR
     assert assess_seniority("Software Engineer 11", "").level != SeniorityLevel.JUNIOR
