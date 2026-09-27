@@ -19,11 +19,11 @@ import { relativeTime } from "../lib/format";
 const LIVE_MS = 30_000;
 
 const DEFAULT_FILTERS: MatchFilters = {
-  // Postings found or published in the last ten days that score 60 or
-  // more, newest first: the user's own cut - anything older or weaker is
-  // noise to them. There is no wider window; nothing is deleted.
+  // Today's postings that score 60 or more, newest first: the user's
+  // own cut. Below 60 is noise to them, and so is anything older than
+  // ten days, which is the widest window offered. Nothing is deleted.
   minScore: 60,
-  days: 10,
+  days: 0,
   targetRoleId: null,
   region: null,
   israelOnly: true,
