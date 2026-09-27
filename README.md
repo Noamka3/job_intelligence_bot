@@ -26,7 +26,7 @@ own machine, so there is no API bill and my CV never leaves it.
 ## How it works, end to end
 
 ```
-Google Sheet -> company sync -> source resolver -> 11 source adapters
+Google Sheet -> company sync -> source resolver -> 13 source adapters
                                                           |
                             incremental crawl <-----------+
                                    |
