@@ -4,8 +4,10 @@
 
 ```
 Google Sheet -> company sync -> source resolver -> source adapter ->
-incremental crawl -> normalize + dedupe -> embed -> Postgres (pgvector) ->
-hybrid matching -> API -> React dashboard -> (WhatsApp, planned)
+incremental crawl -> normalize + dedupe -> embed -> Jev reads the posting
+  -> Postgres (pgvector) -> hybrid matching (+ Jev's fit judgement)
+  -> API -> React dashboard -> (WhatsApp, planned)
+                              nightly: prune past the ten-day window
 ```
 
 The system is one Python service (FastAPI for the API and the dashboard,
@@ -13,8 +15,8 @@ Celery for the recurring crawl and match work) backed by one Postgres
 database with pgvector for the embeddings, and Redis as the Celery broker.
 There is deliberately no microservice split: this is a personal-scale
 tool, and what makes it extensible are the interfaces that vary by
-provider (`JobSourceAdapter`, `EmbeddingProvider`, the LLM dispatch), not
-process boundaries. The README walks through each stage of the pipeline.
+provider (`JobSourceAdapter`, `EmbeddingProvider`, the LLM dispatch,
+Jev behind one API key), not process boundaries. The README walks through each stage of the pipeline.
 
 ## Why sync SQLAlchemy, not async
 
@@ -33,8 +35,8 @@ is not blocked.
 | `career_sources` | A company's recruiting source(s): an ATS board or a career page. Classified by `source_type`, which decides the adapter. `UNSUPPORTED` covers LinkedIn-only entries and rows the resolver could not classify - recorded with a reason, never silently dropped. |
 | `candidate_profiles` | Versioned CV snapshots. Exactly one `is_active=True` row at a time, enforced by a partial unique index rather than application logic. Older versions are kept. |
 | `target_roles` | The roles to match against (e.g. "Junior Software Engineer"), each with its own embedding, separate from the CV's. |
-| `job_postings` | Discovered jobs. `source_published_at`/`source_updated_at` (from the ATS, when it reports them) are kept strictly apart from `first_seen_at`/`last_seen_at` (ours); the API never presents one as the other. |
-| `job_matches` | The hybrid score for one (candidate profile, target role, job) triple, with every component score plus `reasons`/`concerns`. Unique per triple, recomputed in place. |
+| `job_postings` | Discovered jobs. `source_published_at`/`source_updated_at` (from the ATS, when it reports them) are kept strictly apart from `first_seen_at`/`last_seen_at` (ours); the API never presents one as the other. `jev_reading` holds Jev's read of the posting, `archived_at` marks one the nightly prune emptied of its text (`docs/operations.md`). |
+| `job_matches` | The hybrid score for one (candidate profile, target role, job) triple, with every component score plus `reasons`/`concerns`. `jev_fit` holds Jev's judgement of the CV against that posting, for the matches above the role gate. Unique per triple, recomputed in place. |
 | `job_feedback` | Decisions on a job (interested / applied / not relevant / too senior / ...). Dismissing feedback hides the job from the default view. |
 | `applications` | Where an application stands (applied, screening, interview, offer, ...), opened automatically by "applied" feedback. |
 | `crawl_runs` | One observability record per source-check attempt: status, counts, error type. |
@@ -64,6 +66,10 @@ layer, never in storage or in business-logic comparisons.
   or OpenAI, bounded by `OLLAMA_TIMEOUT_SECONDS`. A failure here never
   blocks a CV from being saved, because the raw text and its embedding are
   what matching actually uses.
+- Jev (`app/services/jev/`): one client, one module per question set,
+  and a single `ask()` that turns any failure into `None`. An empty
+  `TYPESAFE_API_KEY` switches the whole thing off, which is how the tests
+  and a fresh clone run - see [`jev.md`](jev.md).
 
 ## Local development ports
 

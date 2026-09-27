@@ -13,7 +13,9 @@ that are actually worth an application.
 It runs unattended: a FastAPI service, a Celery worker and scheduler,
 Postgres with `pgvector`, and a React dashboard, all in Docker. The AI
 parts (embeddings, semantic search, the LLM that reads my CV) run on my
-own machine, so there is no API bill and my CV never leaves it.
+own machine, so there is no API bill and my CV never leaves it. One
+exception, opt-in and off by default: [Jev](docs/jev.md), a decision
+model I measured before letting it near the score.
 
 ![Architecture](docs/architecture.svg)
 
@@ -30,11 +32,16 @@ Google Sheet -> company sync -> source resolver -> 13 source adapters
                                                           |
                             incremental crawl <-----------+
                                    |
-            normalize -> dedupe -> embed -> store (Postgres + pgvector)
+         normalize -> dedupe -> embed -> Jev reads the posting
                                    |
-                          hybrid matching engine
+                       store (Postgres + pgvector)
+                                   |
+            hybrid matching engine  +  Jev judges the CV against it
                                    |
                    REST API -> React dashboard -> (WhatsApp, planned)
+
+            nightly: postings past the ten-day window keep
+                     only their identity, closed ones go
 ```
 
 ### 1. The company list
@@ -56,7 +63,9 @@ Workday, Taleo)? If not, the page itself is fetched and read for a
 JSON-LD `JobPosting`, a WordPress REST API, an embedded board, or plain
 job links.
 
-About 45 of the "custom" pages turned out to be a known ATS in disguise:
+About 45 of the "custom" pages turned out to be a known ATS in disguise
+when the resolver first surveyed them, and it keeps finding more
+(27 Comeet boards today, where only ~10 say so in their URL):
 a `COMEET.init({...})` call, a Greenhouse embed script, a
 `myworkdayjobs.com` link, or an API that the page's own JavaScript calls.
 The resolver recognises the real board and crawls it with the adapter I
@@ -75,16 +84,18 @@ my real list:
 
 | Tier | How the jobs are read | Sources | Cost |
 |---|---|---|---|
-| ATS API | Greenhouse, Lever, Ashby, Comeet, Workable, SmartRecruiters, Workday, Taleo | 50 | 1-6 s |
+| ATS API | Comeet 27, Workday 9, Greenhouse 8, Ashby 4, Workable 2, Lever 1, Taleo 1 | 52 | 1-6 s |
 | Site feed | the JSON the company's own page fetches (Elbit, IAI, Amazon) | 3 | ~8 s |
 | WordPress REST | jobs stored as a custom post type | 13 | ~10 s |
 | JSON-LD | `schema.org/JobPosting` markup, there for Google for Jobs | 1 | ~3 s |
-| Plain HTML | the page's own structure, no hardcoded selectors | 138 | 2-5 s |
-| Headless browser | Playwright, only after everything above found nothing | escalated | ~20 s |
+| Plain HTML | the page's own structure, no hardcoded selectors | 71 | 2-5 s |
+| Headless browser | Playwright, entered automatically, never configured | 68 | ~20 s |
 
-Nothing is configured as "needs a browser". A plain page that returns no
-job links in three successful crawls in a row, or answers 403, is handed
-to the Playwright adapter by itself and polled hourly from then on. A
+Nothing is configured as "needs a browser" - and a third of the sources
+ended up there anyway, which is the honest result of pointing a crawler
+at 208 real career pages. A plain page that returns no job links in
+three successful crawls in a row, or answers 403, is handed to the
+Playwright adapter by itself and polled hourly from then on. A
 rendered page is also watched for what it *fetches*: when the HTML has
 no links to follow, the JSON its own scripts pull becomes the job list.
 Choosing the right captured document is harder than it sounds, because
@@ -134,7 +145,7 @@ is kept whole.
 
 Every posting, my CV and every target role are embedded with
 `paraphrase-multilingual-MiniLM-L12-v2` through fastembed (ONNX, no
-PyTorch, no API key). The model is multilingual on purpose: about 40%
+PyTorch, no API key). The model is multilingual on purpose: 47%
 of the postings are in Hebrew, and a Hebrew job and an English CV have to
 land near each other. Vectors live in Postgres with `pgvector`, so
 similarity is a SQL `ORDER BY` and there is no second database. The
@@ -238,8 +249,9 @@ default), region in Israel, target role.
 
 ### 11. Alerts (planned)
 
-Phase 7 adds a WhatsApp message for a new posting above the notification
-threshold, deduplicated per job through `notification_logs`.
+The next thing to build: a WhatsApp message for a new posting above the
+notification threshold, deduplicated per job through `notification_logs`
+(the table is already there and nothing writes it yet).
 
 ---
 
@@ -284,15 +296,29 @@ Numbers from the live database, not from a sample:
 | | |
 |---|---|
 | Companies on the list | 242, of which 208 have a career page that can be read (LinkedIn URLs are never scraped) |
-| Companies with a posting inside the ten-day window | 78 |
-| Postings listed right now | ~5,500, about 3,000 of them with their text (older ones keep only their identity, see step 5) |
+| Companies with a posting inside the ten-day window | 79 |
+| Postings listed right now | 5,513, of which 2,992 keep their text (older ones keep only their identity, see step 5) |
+| Postings Jev has read | 5,517 - every one; it judges the CV against the 580 that passed the role gate |
 | Crawl runs so far | 36,000+ |
-| Database | 50 MB |
+| Database | 73 MB |
 | Tests | 413 |
 
-Scoring behaviour against my own CV, measured over those postings:
-developer titles that read as junior score a median of 76, senior
-developer titles 14, and roles in other fields (sales, finance, HR) 10.
+Scoring behaviour against my own CV, measured today over those postings
+(medians):
+
+| Postings that read as | Count | Median score |
+|---|---|---|
+| junior developer, no experience demanded | 122 | 40 |
+| student positions | 104 | 23 |
+| senior developer | 274 | 14 |
+| another field entirely (sales, finance, HR) | 190 | 12 |
+
+The ordering is what matters and it holds. The absolute numbers came
+down when Jev took its share of the score: it is stricter than my rules
+(mean 16% across everything it judged), so a genuine junior role that
+used to read 76 now reads 40. Whether that strictness is right is the
+open question the feedback loop in [`docs/jev.md`](docs/jev.md) exists
+to answer; `JEV_WEIGHT=0` puts the old numbers back.
 
 ---
 
@@ -397,7 +423,8 @@ failures only, and no retry storms against a site answering 4xx.
 These are choices, not things I forgot:
 
 - **It only runs while the machine is awake.** A laptop asleep overnight
-  scans nothing. That is what phase 10, a small VPS, is for.
+  scans nothing. That is what a small VPS is for, and it is next after
+  the alerts.
 - **Some sites cannot be read at all.** Enterprise bot management
   (Akamai, Imperva) turns away the headless browser too. Those sources
   fail visibly on the status page instead of quietly returning nothing.
@@ -411,16 +438,17 @@ These are choices, not things I forgot:
 
 ## Roadmap
 
-| Phase | Status |
+| | Status |
 |---|---|
-| 1-6, schema, CV pipeline, company sync, ingestion, matching, scheduling | done |
-| 8, the remaining adapters, embedded-board detection, browser fallback | done |
-| 9, React dashboard, applications pipeline, live status | done |
-| Security review | done |
+| Schema, CV pipeline, company sync, ingestion, matching, scheduling | done |
+| Every adapter, embedded-board detection, the browser fallback | done |
+| React dashboard, applications pipeline, live status | done |
+| Security review, then cross-site writes refused and password lockout | done |
 | Jev as a second reader beside the rules, measured, then weighted | done |
 | Nightly retention: nothing older than ten days keeps its text | done |
-| 7, WhatsApp alerts for strong new matches | next |
-| 10, VPS deployment, CI/CD, backups, rate limiting | planned |
+| Proving Jev against my own feedback (`jev-agreement`) | in progress |
+| WhatsApp alerts for strong new matches | next |
+| VPS deployment, CI/CD, backups, rate limiting | planned |
 
 ---
 

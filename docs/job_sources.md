@@ -1,41 +1,46 @@
 # Job sources
 
-Phase 4 implemented adapters for Greenhouse, Lever, Ashby, Comeet, and a
-basic JSON-LD parser; Phase 8 added Workday, Workable, SmartRecruiters,
-Taleo and a generic HTML adapter, plus detection of boards *embedded* in
-company pages (`app/ingestion/adapters/`, `app/ingestion/resolver.py`).
-This document records the verified facts gathered during research so they
-don't need to be re-derived later. Every adapter below was exercised
-against at least one real company's live board during development; the
-Phase 8 ones against the sheet's own companies (see each section).
-The company distribution below is the real breakdown from the current
-company spreadsheet (240 rows), which is what set the adapter priority
-(Comeet, with ~10 real companies, was built alongside
-Greenhouse/Lever/Ashby rather than after JSON-LD as first planned).
+Adapters for Greenhouse, Lever, Ashby and Comeet came first, with a
+basic JSON-LD parser; then Workday, Workable, SmartRecruiters, Taleo and
+a generic HTML adapter, plus detection of boards *embedded* in company
+pages; then site feeds, the WordPress REST API and the browser fallback
+(`app/ingestion/adapters/`, `app/ingestion/resolver.py`). This document
+records the verified facts gathered during research so they don't need
+to be re-derived later. Every adapter below was exercised against at
+least one real company's live board.
 
-## What's actually in the spreadsheet today
+## How the 242 companies are classified today
 
-| source_type | Count (approx.) | Examples |
+Straight from `career_sources`, not an estimate. The spread has moved a
+lot since the first survey: the resolver kept recognising embedded
+boards (which is why `comeet` is 27 rather than the ~10 whose URL says
+so), and the browser fallback kept claiming plain pages that never
+yielded a job.
+
+| source_type | Sources | Notes |
 |---|---|---|
-| `comeet` | ~10 | Cymotive, Tango, Buyme, Better, Israel Discount Bank, Classiq, Pango, LiveU, TriEye, Natural Intelligence |
-| `greenhouse` | 1 | Torq |
-| `workday` | 3 by hostname + ~5 embedded on company pages | Intel, Flex, Medtronic; Unity, Samsung, Mastercard, Ribbon, Leidos |
-| Oracle Taleo | 1 | Radware |
-| `comeet` embedded on the company's own page (Phase 8) | ~30 | eToro, Checkmarx, Atera, Cyera, Buildots, Kaltura, Gett, hibob, ... |
-| `greenhouse`/`ashby`/`workable` embedded on the company's own page (Phase 8) | ~7 | SimilarWeb, Nexxen, JFrog, AppsFlyer, Crusoe, Humanz, Anzu |
-| `dueto.io` / `topmatch.co.il` | 4 | dead links (404) - Yad2, Capow, Dig, Altshuler Shaham |
-| `adamtotal.co.il` | 2 | CBC Israel, Harel - server-rendered, handled by generic HTML |
-| LinkedIn (`unsupported`, never scraped) | ~30 | mostly recruiter profile links (`linkedin.com/in/...`), a few `linkedin.com/company/.../jobs/` |
-| Broken/missing URL (`unsupported`) | a few | Meta and NICE have no URL; NVIDIA's row points at Earnix's careers page |
-| Everything else (`generic_html`) | ~130 | custom company career pages: ~60 render job links server-side (generic HTML adapter), ~25 are JS-rendered and ~8 sit behind a WAF (handed to the browser fallback, see below) |
+| `generic_html` | 71 | a career page read from its own structure |
+| `playwright` | 68 | escalated automatically: JS-rendered lists, or a WAF that refuses a plain client |
+| `comeet` | 27 | ~10 by URL, the rest found embedded in the company's own page |
+| `wordpress` | 13 | jobs as a custom post type in the REST API |
+| `workday` | 9 | Intel, Flex, Medtronic by hostname; Unity, Samsung, Mastercard, Ribbon, Leidos embedded |
+| `greenhouse` | 8 | Torq by URL; SimilarWeb, Nexxen, JFrog, AppsFlyer, VIA embedded |
+| `ashby` | 4 | Nexxen, Crusoe, ... |
+| `site_feed` | 3 | Elbit, IAI, Amazon - the JSON their own pages fetch |
+| `workable` | 2 | Humanz, Anzu |
+| `lever` | 1 | Mobileye (Lever's EU region) |
+| `taleo` | 1 | Radware |
+| `jsonld` | 1 | `schema.org/JobPosting` markup |
+| `unsupported` | 33 | LinkedIn rows, never crawled (see below) |
 
-No Lever or Ashby examples exist in the sheet today, but both adapters are
-still built (spec priority order + future-proofing for companies added
-later).
+SmartRecruiters has an adapter and no company using it - it verified
+cheaply and costs nothing to keep. Dead sheet rows (`dueto.io`,
+`topmatch.co.il`, Meta and NICE without a URL, NVIDIA's row pointing at
+Earnix) are the ones only the sheet's owner can fix.
 
 ## CareerSource dedup by identifier, not exact URL
 
-Found live during Phase 4 verification: the real sheet's Torq and Tango
+Found live: the real sheet's Torq and Tango
 rows carry query-string variants (`?offices%5B%5D=...`,
 `?location=Tel%20Aviv`) of URLs that were already present from earlier
 manual testing. Matching `CareerSource` by exact `source_url` treated
@@ -63,9 +68,9 @@ simply not crawled.
 ### Comeet
 
 **Verified live** against real companies from the sheet (Cymotive - 0 open
-roles right now; Tango - 19 real open roles, fetched and parsed
-successfully) during Phase 4 development. One important fact a generic
-search summary did not surface:
+roles at the time; Tango - 19 real open roles, fetched and parsed
+successfully). One important fact a generic search summary did not
+surface:
 
 - The positions API (`GET https://www.comeet.com/careers-api/2.0/company/{company_uid}/positions?token={token}&details=false`)
   needs a `token` that is **not present anywhere in the public job board
@@ -82,14 +87,14 @@ search summary did not surface:
   `location` (`name`, `country`, `city`, `is_remote`), `employment_type`
   (free text like `"Full-time"`), `experience_level` (free text like
   `"Senior"` - a real seniority signal Comeet provides directly, not yet
-  used by this project; Phase 5's seniority detection is title/requirements
-  based rather than trusting each ATS's own inconsistent
-  labels, but this is worth revisiting), `time_updated` (ISO-8601),
+  used by this project; seniority detection is title/requirements based
+  rather than trusting each ATS's own inconsistent labels, but this is
+  worth revisiting), `time_updated` (ISO-8601),
   `url_active_page`.
 - Detail call (`details=true`) adds a `details` array of
   `{"name": "Description"|"Responsibilities"|"Requirements"|..., "value": "<html>"}`
-  objects - Comeet already segments the job text into the sections spec
-  §11 asks for, unlike most other ATSes which return one HTML blob.
+  objects - Comeet already segments the job text the way this project
+  wants it, unlike most other ATSes which return one HTML blob.
 - No authentication beyond the token; no published rate limit encountered.
 
 ### Greenhouse
@@ -111,9 +116,9 @@ search summary did not surface:
 ### JSON-LD (`schema.org/JobPosting`)
 - Look for `<script type="application/ld+json">` blocks containing a `JobPosting` object before falling back to generic HTML scraping.
 - Fields to read: `title`, `description`, `datePosted`, `validThrough`, `employmentType`, `hiringOrganization`, `jobLocation`, `applicantLocationRequirements`, `skills`.
-- Many modern company career sites include this for Google for Jobs SEO even when they have no public ATS API — this is expected to cover a meaningful chunk of the ~190 "custom" companies for free, before resorting to generic HTML/Playwright.
+- Many modern company career sites include this for Google for Jobs SEO even when they have no public ATS API. In the end only one company in the sheet exposes its jobs this way: it is cheap to support and it was worth checking, not the coverage win it looked like.
 
-### Workday (Phase 8) - verified live against Intel, Flex, Medtronic
+### Workday - verified live against Intel, Flex, Medtronic
 - `POST https://{tenant}.{wdN}.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs` with
   `{"appliedFacets": {...}, "limit": 20, "offset": 0, "searchText": ""}` ->
   `{total, jobPostings: [{title, externalPath, locationsText, postedOn, bulletFields}], facets}`.
@@ -139,7 +144,7 @@ search summary did not surface:
   (protocol-relative, Samsung), `/External/login` (Leidos). The resolver
   stores `tenant/site` as the identifier and the site root as the URL.
 
-### Workable (Phase 8) - verified live (Humanz) and against workable.readme.io
+### Workable - verified live (Humanz) and against workable.readme.io
 - `GET https://apply.workable.com/api/v1/widget/accounts/{subdomain}` ->
   `{name, description, jobs: [{shortcode, title, city, country, state,
   department, url, application_url, published_on, created_at,
@@ -153,7 +158,7 @@ search summary did not surface:
 - `POST .../api/v3/accounts/{subdomain}/jobs` (paginated via `nextPage` ->
   `token`) also works; not needed at this volume.
 
-### SmartRecruiters (Phase 8) - verified against the official OpenAPI spec + a live call
+### SmartRecruiters - verified against the official OpenAPI spec + a live call
 - `GET https://api.smartrecruiters.com/v1/companies/{companyIdentifier}/postings?limit=100&offset=0`
   -> `{offset, limit, totalFound, content: [...]}`; `limit` caps at 100,
   paginate by offset. `GET .../postings/{id}` adds
@@ -162,7 +167,7 @@ search summary did not surface:
   Only `releasedDate`, no updated-at. No company in the sheet uses it
   today; built because it verified cheaply.
 
-### Oracle Taleo careersection (Phase 8) - verified live against radware.taleo.net
+### Oracle Taleo careersection - verified live against radware.taleo.net
 - `POST https://{host}/careersection/rest/jobboard/searchjobs?portal=101430233&lang=en`
   needs `Content-Type: application/json` **and** a `tz`/`tzname` header
   (500 without), and the full filter body the page's JS sends (trimmed
@@ -178,7 +183,7 @@ search summary did not surface:
   `[12]` qualifications (both `!*!`-prefixed, URL-encoded HTML), `[13]`
   location ("IL-IL-Tel Aviv"). No RSS (off by default in Taleo).
 
-### Embedded boards on company pages (Phase 8) - the big one
+### Embedded boards on company pages - the big one
 A survey of every "custom" page in the sheet (197 fetched) found that
 **~45 of them just wrap a known ATS in the company's own domain** - the
 hostname-based resolver had filed all of them as `generic_html`. Real
@@ -208,7 +213,7 @@ Fiverr, ...). Those are handed to the browser fallback (below). Ribbon's
 Workday tenant (`vhr-genband`) answers 422 to every CXS request, even a
 browser-like one, so it is in the same bucket despite the hostname.
 
-### Generic HTML (Phase 8)
+### Generic HTML
 No API and no board: the listing page's job links are found from its own
 structure (the largest group of same-shaped same-site anchors whose
 links look like job pages), titles from the anchor's heading or the

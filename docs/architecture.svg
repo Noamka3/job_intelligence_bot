@@ -19,11 +19,11 @@
 
   <!-- ══ header ══ -->
   <text x="56" y="62" font-size="30" font-weight="700" fill="#0b1b3a">Job Intelligence Bot</text>
-  <text x="56" y="90" font-size="16" fill="#5a6782">Watches ~240 company career pages, reads each posting against a CV, surfaces only what fits. Everything runs locally.</text>
+  <text x="56" y="90" font-size="16" fill="#5a6782">Watches 242 company career pages, reads each posting against a CV, surfaces only what fits. Local by default; one optional external model.</text>
   <g transform="translate(1086,40)">
     <rect width="298" height="56" rx="12" fill="#eef3ff" stroke="#c9d8f7"/>
     <text x="16" y="24" font-size="12" font-weight="600" fill="#3b6fd4">MEASURED ON LIVE DATA</text>
-    <text x="16" y="44" font-size="13" fill="#31405c">5,300 active postings · 208 sources · 380 tests</text>
+    <text x="16" y="44" font-size="13" fill="#31405c">5,513 postings · 208 sources · 413 tests</text>
   </g>
 
   <!-- ══ 1. SOURCES ══ -->
@@ -44,7 +44,7 @@
     <path d="M150 182 L150 200" stroke="#8b95a8" stroke-width="1.6" marker-end="url(#arrow)"/>
 
     <rect x="20" y="204" width="260" height="20" rx="6" fill="#fff8e8" stroke="#f3e2b8"/>
-    <text x="34" y="218" font-size="12" fill="#8a6d1f">34 LinkedIn rows never scraped (ToS)</text>
+    <text x="34" y="218" font-size="12" fill="#8a6d1f">33 LinkedIn rows never scraped (ToS)</text>
   </g>
 
   <!-- ══ 2. RESOLVER ══ -->
@@ -55,7 +55,6 @@
     <text x="20" y="80" font-size="13" fill="#5a6782">• hostname → known ATS</text>
     <text x="20" y="101" font-size="13" fill="#5a6782">• reads the page for an embedded board</text>
     <text x="20" y="122" font-size="13" fill="#5a6782">• a guess is kept only if the ATS API answers</text>
-    <rect x="20" y="130" width="260" height="0" fill="none"/>
   </g>
 
   <!-- arrows from column 1 to column 2 -->
@@ -69,8 +68,8 @@
 
     <g transform="translate(20,46)">
       <rect width="332" height="54" rx="10" fill="#eaf5ec" stroke="#c3e2ca"/>
-      <text x="14" y="23" font-size="14" font-weight="600" fill="#1d6b33">ATS API · 50 sources</text>
-      <text x="14" y="42" font-size="12.5" fill="#3d7a4f">Greenhouse · Lever · Ashby · Comeet · Workable</text>
+      <text x="14" y="23" font-size="14" font-weight="600" fill="#1d6b33">ATS API · 52 sources</text>
+      <text x="14" y="42" font-size="12.5" fill="#3d7a4f">Comeet · Workday · Greenhouse · Ashby · Lever</text>
       <text x="292" y="33" font-size="12" font-weight="600" fill="#1d6b33">1–6 s</text>
     </g>
     <g transform="translate(20,108)">
@@ -87,13 +86,13 @@
     </g>
     <g transform="translate(20,232)">
       <rect width="332" height="54" rx="10" fill="#fdf6e9" stroke="#efdfc0"/>
-      <text x="14" y="23" font-size="14" font-weight="600" fill="#8a6d1f">Plain HTML · 138 sources</text>
+      <text x="14" y="23" font-size="14" font-weight="600" fill="#8a6d1f">Plain HTML · 71 sources</text>
       <text x="14" y="42" font-size="12.5" fill="#9a7d33">page structure, no fixed selectors</text>
       <text x="292" y="33" font-size="12" font-weight="600" fill="#8a6d1f">2–5 s</text>
     </g>
     <g transform="translate(20,294)">
       <rect width="332" height="66" rx="10" fill="#fdeeee" stroke="#f2cfcf"/>
-      <text x="14" y="23" font-size="14" font-weight="600" fill="#a33a3a">Headless browser (Playwright)</text>
+      <text x="14" y="23" font-size="14" font-weight="600" fill="#a33a3a">Headless browser · 68 sources</text>
       <text x="14" y="42" font-size="12.5" fill="#b35555">renders JS pages · sniffs their JSON feeds</text>
       <text x="14" y="59" font-size="11.5" fill="#b35555">entered automatically after 3 empty crawls or a 403</text>
       <text x="290" y="33" font-size="12" font-weight="600" fill="#a33a3a">~20 s</text>
@@ -124,8 +123,8 @@
     <text x="20" y="32" font-size="13" font-weight="700" fill="#8b95a8" letter-spacing="1">5 · STORAGE</text>
     <text x="20" y="58" font-size="15" font-weight="600" fill="#0b1b3a">PostgreSQL + pgvector</text>
     <text x="20" y="80" font-size="12.5" fill="#5a6782">postings · matches · crawl runs · applications</text>
-    <text x="20" y="101" font-size="12.5" fill="#5a6782">384-dim embeddings, HNSW index</text>
-    <text x="20" y="124" font-size="12.5" fill="#5a6782">publish date and discovery date never conflated</text>
+    <text x="20" y="101" font-size="12.5" fill="#5a6782">384-dim embeddings · publish ≠ discovery date</text>
+    <text x="20" y="124" font-size="12.5" fill="#5a6782">nightly prune: past 10 days, identity only</text>
   </g>
 
   <!-- ══ 6. MATCHING ══ -->
@@ -138,22 +137,24 @@
     <text x="30" y="68" font-size="13.5" font-weight="600" fill="#3b6fd4">score = role gate</text>
     <text x="30" y="88" font-size="13.5" font-weight="600" fill="#3b6fd4">× quality</text>
 
-    <text x="18" y="128" font-size="12.5" fill="#31405c">The gate asks: is this even</text>
-    <text x="18" y="146" font-size="12.5" fill="#31405c">the role? A 0.98-similarity</text>
-    <text x="18" y="164" font-size="12.5" fill="#31405c">sales role lands at 30%.</text>
+    <text x="18" y="126" font-size="12.5" fill="#31405c">The gate asks: is this even</text>
+    <text x="18" y="144" font-size="12.5" fill="#31405c">the role? A 0.98-similarity</text>
+    <text x="18" y="162" font-size="12.5" fill="#31405c">sales role lands at 30%.</text>
 
-    <text x="18" y="196" font-size="12" font-weight="700" fill="#8b95a8">QUALITY WEIGHTS</text>
-    <text x="18" y="217" font-size="12.5" fill="#5a6782">seniority 45% · skills 30%</text>
-    <text x="18" y="236" font-size="12.5" fill="#5a6782">CV 12% · intent 8%</text>
-    <text x="18" y="255" font-size="12.5" fill="#5a6782">location 3% · recency 2%</text>
+    <text x="18" y="190" font-size="12" font-weight="700" fill="#8b95a8">QUALITY WEIGHTS</text>
+    <text x="18" y="210" font-size="12.5" fill="#5a6782">seniority 45% · skills 30%</text>
+    <text x="18" y="228" font-size="12.5" fill="#5a6782">CV 12% · intent 8%</text>
+    <text x="18" y="246" font-size="12.5" fill="#5a6782">location 3% · recency 2%</text>
 
-    <text x="18" y="288" font-size="12" font-weight="700" fill="#8b95a8">SENIORITY, HE + EN</text>
-    <text x="18" y="309" font-size="12.5" fill="#5a6782">"3-5 שנות ניסיון" → 3 years</text>
-    <text x="18" y="328" font-size="12.5" fill="#5a6782">stated years beat the title</text>
+    <text x="18" y="274" font-size="12" font-weight="700" fill="#8b95a8">SENIORITY, HE + EN</text>
+    <text x="18" y="294" font-size="12.5" fill="#5a6782">"3-5 שנות ניסיון" → 3 years</text>
 
-    <rect x="18" y="346" width="188" height="46" rx="8" fill="#f7f9fd" stroke="#e3e9f4"/>
-    <text x="30" y="365" font-size="12" fill="#31405c">Every match carries</text>
-    <text x="30" y="383" font-size="12" fill="#31405c">reasons and concerns.</text>
+    <rect x="18" y="310" width="188" height="50" rx="10" fill="#f3eefe" stroke="#d9cdf5"/>
+    <text x="30" y="330" font-size="12.5" font-weight="600" fill="#6b46c1">Jev · second opinion</text>
+    <text x="30" y="349" font-size="11.5" fill="#7c5cc4">35% of a judged match</text>
+
+    <text x="18" y="380" font-size="12" fill="#8b95a8">Every match carries its</text>
+    <text x="18" y="396" font-size="12" fill="#8b95a8">reasons and concerns.</text>
   </g>
 
   <!-- ══ 7. SCHEDULER (band) ══ -->
@@ -205,7 +206,7 @@
     <g transform="translate(352,46)">
       <rect width="270" height="64" rx="10" fill="#f7f9fd" stroke="#e3e9f4"/>
       <text x="14" y="25" font-size="14" font-weight="600" fill="#0b1b3a">React dashboard</text>
-      <text x="14" y="45" font-size="12.5" fill="#5a6782">Hebrew, RTL · live "found today" line</text>
+      <text x="14" y="45" font-size="12.5" fill="#5a6782">Hebrew, RTL · two score rings per card</text>
     </g>
     <g transform="translate(20,124)">
       <rect width="602" height="52" rx="10" fill="#fdf6e9" stroke="#efdfc0"/>
@@ -236,11 +237,11 @@
     </g>
     <g transform="translate(332,110)">
       <rect width="290" height="52" rx="10" fill="#eef3ff" stroke="#c9d8f7"/>
-      <text x="14" y="22" font-size="13" font-weight="600" fill="#3b6fd4">Feeds read, never executed</text>
-      <text x="14" y="40" font-size="12" fill="#31405c">same-site JSON only, size-capped</text>
+      <text x="14" y="22" font-size="13" font-weight="600" fill="#3b6fd4">Cross-site writes refused</text>
+      <text x="14" y="40" font-size="12" fill="#31405c">and 20 wrong passwords lock the address out</text>
     </g>
-    <text x="20" y="182" font-size="12" fill="#8b95a8">pip-audit: no known vulnerabilities in application dependencies · auth ready, off while bound to localhost</text>
+    <text x="20" y="182" font-size="12" fill="#8b95a8">pip-audit: no known vulnerabilities in application dependencies · feeds read, never executed · auth off while bound to localhost</text>
   </g>
 
-  <text x="56" y="958" font-size="12" fill="#8b95a8">Python 3.12 · FastAPI · SQLAlchemy 2 · Alembic · Celery · PostgreSQL 16 + pgvector · Redis · Playwright · fastembed · React + TypeScript · Docker</text>
+  <text x="56" y="958" font-size="12" fill="#8b95a8">Python 3.12 · FastAPI · SQLAlchemy 2 · Alembic · Celery · PostgreSQL 16 + pgvector · Redis · Playwright · fastembed · Ollama · Jev (optional) · React + TypeScript · Docker</text>
 </svg>

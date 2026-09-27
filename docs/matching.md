@@ -1,4 +1,4 @@
-# Matching (Phase 5)
+# Matching
 
 ## Pipeline
 
@@ -17,7 +17,7 @@ Location Fit                  (location_score)
         v
 Recency                       (recency_score)
         v
-Optional LLM Reranking (not yet built - see below)
+Jev's fit judgement           (jev_fit, above the role gate only)
         v
 Final Score (0-100)
 ```
@@ -213,9 +213,12 @@ running `python -m app.cli reembed`.
   that purpose today (e.g. a confidently-senior job still gets a
   `JobMatch` row, just a low one). A future pass could exclude egregious
   mismatches outright rather than merely scoring them low.
-- **Optional LLM reranking** - deliberately not built. Given
-  the local-LLM performance findings during Phase 2 (CPU-only inference
-  took minutes per call and once destabilized the whole machine - see
-  README's "Local LLM performance" entry), reranking every
-  newly-discovered job would be far too expensive to run unattended; if
-  it's ever added it needs a strict threshold/opt-in gate.
+- **LLM reranking** - a generative model rewriting the ranking is still
+  deliberately not built: CPU-only local inference took minutes per call
+  and once destabilized the whole machine (see the "Local LLM
+  performance" entry in `docs/operations.md`), so reranking every
+  newly-discovered job could not run unattended. What was built instead
+  is [Jev](jev.md): a decision model that answers a closed question with
+  a probability in ~200 ms for a fraction of a cent, asked only above
+  the role gate, behind an opt-in key and a tunable weight. Same intent,
+  a shape that can actually run on every match.

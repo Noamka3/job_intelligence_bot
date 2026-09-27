@@ -37,6 +37,13 @@ Postings that did not pass the role gate (`role_fit < 0.5`) are not
 judged: the score already says they are not the role, and skipping them
 keeps the calls in the hundreds rather than thousands.
 
+## What it covers
+
+Every posting is read: 5,517 of them, the whole database. The fit
+judgement is asked only of matches above the role gate - 580 - because
+the score already says the rest are not the role, and asking anyway
+would multiply the calls by ten for answers nobody reads.
+
 ## Where the answers go
 
 `job_postings.jev_reading` and `job_matches.jev_fit`, both nullable
@@ -58,7 +65,7 @@ move it up or down.
 
 Two concerns, both measurable:
 
-1. **Hebrew.** 40% of the postings are in Hebrew. TypeSafe says English
+1. **Hebrew.** 47% of the postings are in Hebrew. TypeSafe says English
    is the primary training language and that other languages should be
    tested before deployment. The rule-based readers were built for
    Hebrew from the start.
@@ -78,10 +85,10 @@ weight will be tuned against.
 ## Cost and privacy
 
 $0.042 per million input tokens, output free. A posting read is about
-1,000 tokens, a fit judgement about 2,500: reading the whole database
-once is around 25 cents, judging every match above the gate around 6,
-and the daily flow after that is under a cent. `jev-backfill` prints
-the tokens it used.
+1,000 tokens, a fit judgement about 2,500. Measured on the real
+database: 5,517 postings read and 580 matches judged, which is about 25
+cents and 6 cents respectively, and the daily flow after that is under a
+cent. `jev-backfill` reports how many it read and judged.
 
 With a key set, posting text and **the CV text** are sent to TypeSafe,
 hosted in the United States. Their policy: input is not used to train

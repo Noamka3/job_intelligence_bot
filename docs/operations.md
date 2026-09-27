@@ -151,8 +151,10 @@ scheduler queue) trims the database to what the windows can show:
 - A posting with feedback or an application is never touched.
 
 `JOB_RETENTION_DAYS` (10) is the window; `uv run python -m app.cli prune`
-runs the same thing on demand and prints the counts. Measured before
-this existed: the whole database was 160 MB, 139 MB of it postings.
+runs the same thing on demand and prints the counts. The first run
+archived 2,546 postings and deleted 681 closed ones, taking the database
+from 160 MB to 44 MB (it grows back with each day's crawling - 73 MB at
+the time of writing, with Jev's reads stored alongside).
 
 ## Tests, linting, migrations
 
@@ -193,6 +195,8 @@ uv run python -m app.cli apply-poll-intervals  # re-apply per-type intervals
 uv run python -m app.cli rebuild-profile       # re-extract + re-embed the active CV
 uv run python -m app.cli reembed               # re-embed jobs and roles
 uv run python -m app.cli prune                 # archive/delete postings past the window
+uv run python -m app.cli jev-backfill          # ask Jev about stored postings and matches
+uv run python -m app.cli jev-agreement         # how well Jev and the rules predict your feedback
 ```
 
 `reresolve-sources` is the one to run after a resolver change: it re-runs
@@ -230,7 +234,10 @@ curl http://127.0.0.1:8000/dashboard/stats
 the request**, which is fine on demand (right after a sheet sync) and
 slow with many sources. The scheduler does the same work automatically.
 
-Feedback is stored for future ranking work; nothing learns from it yet.
+Feedback does not change the score on its own. What it feeds is
+`jev-agreement`: how well the rules and Jev each rank the jobs marked
+interesting above the ones marked not relevant, which is the number
+`JEV_WEIGHT` gets tuned against (see [`jev.md`](jev.md)).
 
 ## Troubleshooting
 
