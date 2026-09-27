@@ -28,11 +28,9 @@ const DEFAULT_FILTERS: MatchFilters = {
   region: null,
   israelOnly: true,
   hideDismissed: true,
-  // Postings that state a requirement above the target role's ceiling
-  // are hidden by default, and so are student/internship positions,
-  // which are open only to people still studying - they have their own
-  // view. Ones that say nothing stay, with a grey tag.
-  seniority: "not_experienced",
+  // Every level, with its tag - the user's choice: they read the tag
+  // and decide, and the narrower views are one click away.
+  seniority: "all",
   query: "",
   sort: "recent",
 };

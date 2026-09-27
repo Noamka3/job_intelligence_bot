@@ -24,11 +24,9 @@ from app.services.matching.queries import MatchFilters, count_top_matches, windo
 from app.services.scheduler_state import crawl_queue_depth, last_dispatch_at, next_dispatch_at
 
 # What the matches page's live line calls "over 60% today": today's
-# Israeli (or unplaced) postings that don't demand experience, scored
-# 60 or more - the same query the page's own 60%+ view runs.
-_TODAYS_DEFAULT_VIEW = MatchFilters(
-    min_score=60, seniority="not_experienced", discovered_within_days=0
-)
+# Israeli (or unplaced) postings scored 60 or more, at any level - the
+# same query the page opens on.
+_TODAYS_DEFAULT_VIEW = MatchFilters(min_score=60, discovered_within_days=0)
 
 
 @dataclass(frozen=True)
