@@ -15,6 +15,7 @@ from app.core.config import get_settings
 from app.models.candidate_profile import CandidateProfile
 from app.models.job_match import JobMatch
 from app.models.job_posting import JobPosting
+from app.models.target_role import TargetRole
 from app.services.jev import client as jev_client
 from app.services.jev import judge_fit, needs_judgement, needs_reading, read_posting
 
@@ -122,9 +123,12 @@ def test_a_posting_is_read_once_per_text(monkeypatch: pytest.MonkeyPatch) -> Non
 def test_judge_fit_sends_resume_and_posting_side_by_side(monkeypatch: pytest.MonkeyPatch) -> None:
     seen = _fake_api(monkeypatch, FIT_ANSWERS)
     candidate = CandidateProfile(normalized_text="B.Sc. Computer Science. Python, React, SQL.")
+    role = TargetRole(
+        canonical_name="Junior Software Engineer", description="A first developer job"
+    )
     job = _job(title="Junior Backend Developer")
 
-    judgement = judge_fit(candidate, job)
+    judgement = judge_fit(candidate, role, job)
 
     assert judgement == {
         "model": "jev-1.13.0",
@@ -136,6 +140,7 @@ def test_judge_fit_sends_resume_and_posting_side_by_side(monkeypatch: pytest.Mon
     }
     (request,) = seen
     assert request["state"]["resume"].startswith("B.Sc.")
+    assert request["state"]["looking_for"] == "A first developer job"
     assert request["state"]["job_posting"]["title"] == "Junior Backend Developer"
     match = JobMatch(jev_fit=judgement)
     assert not needs_judgement(match, job)

@@ -350,6 +350,7 @@ def jev_backfill() -> None:
     """
     from app.models.job_match import JobMatch
     from app.models.job_posting import JobPosting
+    from app.models.target_role import TargetRole
 
     if not is_enabled():
         typer.echo("TYPESAFE_API_KEY is not set - nothing to do.", err=True)
@@ -376,8 +377,9 @@ def jev_backfill() -> None:
         db.commit()
 
         rows = db.execute(
-            select(JobMatch, JobPosting)
+            select(JobMatch, JobPosting, TargetRole)
             .join(JobPosting, JobMatch.job_id == JobPosting.id)
+            .join(TargetRole, JobMatch.target_role_id == TargetRole.id)
             .where(
                 JobMatch.candidate_profile_id == candidate.id,
                 JobMatch.role_score >= JUDGED_ABOVE_ROLE_FIT,
@@ -385,16 +387,40 @@ def jev_backfill() -> None:
             )
         ).all()
         judged = 0
-        for index, (match, job) in enumerate(
-            ((m, j) for m, j in rows if needs_judgement(m, j)), start=1
+        for index, (match, job, role) in enumerate(
+            ((m, j, r) for m, j, r in rows if needs_judgement(m, j)), start=1
         ):
-            match.jev_fit = judge_fit(candidate, job)
+            match.jev_fit = judge_fit(candidate, role, job)
             judged += match.jev_fit is not None
             if index % 100 == 0:
                 db.commit()
                 typer.echo(f"  judged {index} matches...")
         db.commit()
     typer.echo(f"Read {read} posting(s), judged {judged} match(es).")
+
+
+@app.command("jev-agreement")
+def jev_agreement() -> None:
+    """How well the rules and Jev each predict the feedback given in the
+    dashboard - pairwise accuracy of positive over negative feedback.
+    """
+    from app.services.jev.agreement import measure
+
+    with get_session_factory()() as db:
+        result = measure(db)
+    if result is None:
+        typer.echo("No active candidate profile - upload a resume first.", err=True)
+        raise typer.Exit(code=1)
+
+    def show(value: float | None) -> str:
+        return "n/a" if value is None else f"{value:.0%}"
+
+    typer.echo(f"Feedback: {result.positives} positive, {result.negatives} negative")
+    typer.echo(f"Rules rank positive over negative: {show(result.rules_pairwise)}")
+    typer.echo(
+        f"Jev   rank positive over negative: {show(result.jev_pairwise)}"
+        f"  (judged: {result.judged_positives} positive, {result.judged_negatives} negative)"
+    )
 
 
 if __name__ == "__main__":

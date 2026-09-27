@@ -22,8 +22,10 @@ when the posting changes:
 
 **Of every match above the role gate** (`app/services/jev/fit.py`),
 once per (match, posting text). TypeSafe's own composite-scoring recipe
-is resume screening, and this is that recipe: the CV and the posting go
-in one state, side by side.
+is resume screening, and this is that recipe: the CV, what the candidate
+is looking for (the target role's description) and the posting go in one
+state, side by side. The middle part matters: without it a graduate's CV
+was judged a fine fit for student positions.
 
 | Question | Type |
 |---|---|
@@ -102,6 +104,11 @@ TYPESAFE_API_KEY=...          # from console.typesafe.ai/keys
 JEV_MODEL=jev-1.13.0          # pinned; jev-latest moves without notice
 
 uv run python -m app.cli jev-backfill   # read what is stored, judge what passed the gate
+uv run python -m app.cli jev-agreement  # how well Jev and the rules predict the feedback given
 ```
+
+After changing a question or the target role's description, judgements
+already stored are stale: `update job_matches set jev_fit = null`, then
+`jev-backfill` and `score-all`.
 
 New postings are read as they are crawled and judged as they are scored.

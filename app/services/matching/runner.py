@@ -44,7 +44,7 @@ def _score_job_for(
         result = compute_match(candidate, target_role, job, candidate_skills=candidate_skills)
         match = save_match(db, candidate.id, target_role.id, job.id, result)
         if result.role_score >= JUDGED_ABOVE_ROLE_FIT and needs_judgement(match, job):
-            match.jev_fit = judge_fit(candidate, job)
+            match.jev_fit = judge_fit(candidate, target_role, job)
         if (fit := fit_probability(match)) is not None:
             # Scored again with Jev's judgement taking its share (JEV_WEIGHT).
             with_jev = compute_match(

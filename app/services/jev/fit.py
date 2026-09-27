@@ -20,6 +20,7 @@ from typesafe_sdk import Choice, ChoiceAnswer, Noul, NoulAnswer, NoulCriteria, S
 from app.models.candidate_profile import CandidateProfile
 from app.models.job_match import JobMatch
 from app.models.job_posting import JobPosting
+from app.models.target_role import TargetRole
 from app.services.jev.client import MAX_STATE_CHARS, Question, ask, is_enabled
 
 # The role gate's role_fit below which a posting is not judged: the
@@ -83,10 +84,14 @@ def fit_probability(match: JobMatch) -> float | None:
     return float(match.jev_fit["would_be_considered"]) if match.jev_fit else None
 
 
-def judge_fit(candidate: CandidateProfile, job: JobPosting) -> dict[str, Any] | None:
+def judge_fit(
+    candidate: CandidateProfile, target_role: TargetRole, job: JobPosting
+) -> dict[str, Any] | None:
     """Jev's judgement of `candidate` for `job`, as the dict stored in
-    JobMatch.jev_fit, or None when Jev is off or the call failed."""
-    response = ask(_state(candidate, job), _QUESTIONS)
+    JobMatch.jev_fit, or None when Jev is off or the call failed. The
+    target role says what the candidate is looking for - without it, a
+    graduate's CV was judged a fine fit for student positions."""
+    response = ask(_state(candidate, target_role, job), _QUESTIONS)
     if response is None:
         return None
     answers = response.answers
@@ -106,9 +111,10 @@ def judge_fit(candidate: CandidateProfile, job: JobPosting) -> dict[str, Any] | 
     )
 
 
-def _state(candidate: CandidateProfile, job: JobPosting) -> dict[str, Any]:
+def _state(candidate: CandidateProfile, target_role: TargetRole, job: JobPosting) -> dict[str, Any]:
     text = job.normalized_description or job.description or ""
     return {
         "resume": candidate.normalized_text[:MAX_STATE_CHARS],
+        "looking_for": target_role.description or target_role.canonical_name,
         "job_posting": {"title": job.title, "description": text[:MAX_STATE_CHARS]},
     }
