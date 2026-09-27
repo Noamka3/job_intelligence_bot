@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.core.config import Settings
+from app.core.config import Settings, get_settings
 from app.models.candidate_profile import CandidateProfile
 from app.models.enums import RemoteType
 from app.models.job_posting import JobPosting
@@ -184,3 +184,22 @@ def test_invalid_weights_raise_a_clear_error() -> None:
     )
     with pytest.raises(scoring.InvalidWeightsError):
         scoring._validate_weights(settings)
+
+
+def test_jev_judgement_takes_its_share_of_the_quality(monkeypatch: pytest.MonkeyPatch) -> None:
+    """With JEV_WEIGHT at 0.5, a judged match's quality is half the rules
+    and half Jev's probability; at 0 the judgement is shown but not scored."""
+    candidate, role, job = _candidate(), _target_role(), _job()
+    without = scoring.compute_match(candidate, role, job)
+
+    monkeypatch.setattr(get_settings(), "jev_weight", 0.0)
+    assert (
+        scoring.compute_match(candidate, role, job, jev_fit=0.9).final_score == without.final_score
+    )
+
+    monkeypatch.setattr(get_settings(), "jev_weight", 0.5)
+    shortlisted = scoring.compute_match(candidate, role, job, jev_fit=0.9)
+    passed_over = scoring.compute_match(candidate, role, job, jev_fit=0.1)
+    assert shortlisted.final_score > without.final_score > passed_over.final_score
+    assert any(reason.startswith("Jev:") for reason in shortlisted.reasons)
+    assert any(concern.startswith("Jev:") for concern in passed_over.concerns)

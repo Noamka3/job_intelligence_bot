@@ -51,7 +51,7 @@ class JobMatch(Base, TimestampMixin):
     concerns: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
     # Jev's judgement of the CV for this posting (app/services/jev/fit.py),
     # with the posting's content hash; None below the role gate or with
-    # Jev off. Shown, not yet ranked on.
+    # Jev off. Its probability takes JEV_WEIGHT of the quality score.
     jev_fit: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
 
     def __repr__(self) -> str:

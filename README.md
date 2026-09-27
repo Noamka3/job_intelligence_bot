@@ -164,6 +164,7 @@ final = 100 x role_gate x quality
 role_gate = 0.2 + 0.8 x role_fit
 quality   = 0.45*seniority + 0.30*skills + 0.12*cv_similarity
           + 0.08*intent + 0.03*location + 0.02*recency
+          -> (1 - w)*quality + w*jev_fit   when Jev judged the match
 ```
 
 The role gate is the part that matters. A Check Point posting titled
@@ -262,12 +263,15 @@ model (September 2026) that answers typed questions with calibrated
 probabilities instead of generating text, which is exactly the shape of
 the decisions this pipeline makes with hand-written rules: what kind of
 role is this, what level, would a recruiter shortlist me. It runs beside
-the rules, its answers are stored and shown on every card, and it gets
-no weight in the score until it has been measured against my own
-feedback - on Hebrew postings too, where the vendor says accuracy is
-lower. [`docs/jev.md`](docs/jev.md) has the questions, the cost, the
-privacy trade-off (the CV text leaves the machine when the key is set)
-and the plan for promoting it.
+the rules, its answers are stored and shown on every card, and its
+"would a recruiter shortlist me" probability takes about a third of the
+quality score for the matches it judged (`JEV_WEIGHT`, a setting; 0 keeps
+it as a second opinion only). I checked it on 40 Hebrew and 40 English
+postings first, because the vendor says accuracy is lower outside
+English: it did as well in Hebrew, and better than my rules on a few
+Hebrew idioms. [`docs/jev.md`](docs/jev.md) has the questions, the
+numbers, the cost and the privacy trade-off (the CV text leaves the
+machine when the key is set).
 
 ---
 

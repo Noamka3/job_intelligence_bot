@@ -181,10 +181,15 @@ class Settings(BaseSettings):
     # An empty key turns it off, which is how the tests and a fresh clone
     # run. With a key, every new posting is read once and every match
     # above the role gate is judged once; both are stored and shown, and
-    # neither touches the ranking until the reads have been measured
-    # against real feedback. Pinned to a version: "jev-latest" moves.
+    # JEV_WEIGHT below says how much of the score the judgement takes.
+    # Pinned to a version: "jev-latest" moves.
     typesafe_api_key: str = ""
     jev_model: str = "jev-1.13.0"
+    # How much of a match's quality Jev's judgement takes, for the
+    # matches it judged: quality = (1 - w) x rules + w x P(a recruiter
+    # would shortlist). 0 keeps Jev in shadow mode - shown, never ranked
+    # on. The role gate applies either way.
+    jev_weight: float = Field(default=0.0, ge=0.0, le=1.0)
 
     # --- Twilio WhatsApp (Phase 7) ---
     twilio_account_sid: str = ""

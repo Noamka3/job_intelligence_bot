@@ -11,6 +11,8 @@ a black box.
                 one of the user's excluded terms
     quality   = weighted sum of seniority, skills, calibrated candidate
                 similarity, calibrated intent similarity, location, recency
+              - and, for a match Jev judged, (1 - w) x that + w x Jev's
+                P(a recruiter would shortlist), w = JEV_WEIGHT
 
 The gate is what makes "this isn't the role you're looking for" dominate:
 a job can be junior-friendly, in Tel Aviv, fresh and mention a skill you
@@ -119,9 +121,12 @@ def compute_match(
     target_role: TargetRole,
     job: JobPosting,
     candidate_skills: set[str] | None = None,
+    jev_fit: float | None = None,
 ) -> MatchResult:
     """`candidate_skills` lets a bulk rescore extract the CV's skills once
-    instead of once per job (~3,000 regex passes over the same text)."""
+    instead of once per job (~3,000 regex passes over the same text).
+    `jev_fit` is Jev's P(a recruiter would shortlist) for this pair, when
+    the match has been judged (app/services/jev/fit.py)."""
     settings = get_settings()
     _validate_weights(settings)
 
@@ -200,6 +205,12 @@ def compute_match(
         + settings.weight_location * location_score
         + settings.weight_recency * recency_score
     )
+    if jev_fit is not None and settings.jev_weight:
+        quality = (1.0 - settings.jev_weight) * quality + settings.jev_weight * jev_fit
+        if jev_fit >= 0.7:
+            reasons.append(f"Jev: a recruiter would shortlist you ({jev_fit:.0%})")
+        elif jev_fit <= 0.3:
+            concerns.append(f"Jev: a recruiter would probably pass ({jev_fit:.0%})")
     role_gate = settings.role_gate_floor + (1.0 - settings.role_gate_floor) * role_fit
     final_score = round(100 * role_gate * quality, 1)
 

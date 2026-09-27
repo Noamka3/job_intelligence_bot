@@ -5,7 +5,7 @@ text ("state") and typed questions, and it answers with probabilities
 and a confidence score instead of generating text. That shape fits two
 places in this pipeline where the code already makes narrow, structured
 decisions with hand-written rules. This document says what is asked,
-where the answers go, what it costs, and why nothing ranks on it yet.
+where the answers go, how much of the score it takes, and what it costs.
 
 ## What is asked
 
@@ -39,12 +39,22 @@ keeps the calls in the hundreds rather than thousands.
 
 `job_postings.jev_reading` and `job_matches.jev_fit`, both nullable
 JSONB, each carrying the model version and the content hash. The
-dashboard shows them on the card and on the job page. Nothing else
-reads them yet.
+dashboard shows them on the card and on the job page; the scorer reads
+the judgement (below).
 
-## Why it does not rank anything yet
+## How it ranks
 
-Two reasons, both measurable:
+`JEV_WEIGHT` is the share of a judged match's quality score that Jev's
+"a recruiter would shortlist" probability takes: `quality = (1 - w) x
+rules + w x jev_fit`. The role gate applies either way, and only
+matches above it are judged. At 0 Jev is shown and never ranked on; the
+owner runs it at 0.35 - about a third - on the strength of the reads
+below, with the feedback given in the dashboard as the thing that will
+move it up or down.
+
+## What was checked before giving it weight
+
+Two concerns, both measurable:
 
 1. **Hebrew.** 40% of the postings are in Hebrew. TypeSafe says English
    is the primary training language and that other languages should be
@@ -53,12 +63,15 @@ Two reasons, both measurable:
 2. **No independent benchmark exists** for the model; the accuracy
    figures are the vendor's own.
 
-So Jev runs in the open first: its reads are stored and shown next to
-the rule-based ones, and compared against the feedback given in the
-dashboard (interested / not relevant / too senior). When it agrees with
-that feedback more often than the rules do - on Hebrew postings too -
-it gets a weight in the score, behind a setting. Until then it is a
-second opinion on every card.
+Measured on 40 Hebrew and 40 English postings against the rule-based
+reads: level agreement 19/24 (Hebrew) and 22/34 (English) where the
+rules had decided; students-only 40/40 in both languages; experience
+required 34/40 and 31/40. Where Jev disagreed on Hebrew it was mostly
+right ("ראש מחלקה" is a lead, "מנהל חשבונות" is a bookkeeper, not a
+manager); on English it tends to call three years "senior" in
+non-technical roles. Its reads stay visible next to the rule-based
+ones on every job page, and the feedback given on cards is what the
+weight will be tuned against.
 
 ## Cost and privacy
 

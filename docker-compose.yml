@@ -70,6 +70,7 @@ services:
       # only when a key is set (docs/jev.md); empty means off.
       TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
       JEV_MODEL: ${JEV_MODEL:-jev-1.13.0}
+      JEV_WEIGHT: ${JEV_WEIGHT:-0}
     volumes:
       # Must match FASTEMBED_CACHE_PATH in the Dockerfile - fastembed
       # caches under <system temp>/fastembed_cache by default, not

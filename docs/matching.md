@@ -71,6 +71,7 @@ role_fit  = max(title/keyword role score, 0.6 x calibrated intent similarity)
               excluded term
 quality   = 0.45 seniority + 0.30 skills + 0.12 candidate_sim + 0.08 intent_sim
             + 0.03 location + 0.02 recency
+          -> (1 - w) x that + w x jev_fit   for a match Jev judged, w = JEV_WEIGHT
 ```
 
 - The **gate** makes "not the role you're looking for" dominate: with no

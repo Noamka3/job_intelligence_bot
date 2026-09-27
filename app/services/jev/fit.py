@@ -78,6 +78,11 @@ def needs_judgement(match: JobMatch, job: JobPosting) -> bool:
     return stored.get("content_hash") != job.content_hash
 
 
+def fit_probability(match: JobMatch) -> float | None:
+    """Jev's P(a recruiter would shortlist) from a stored judgement."""
+    return float(match.jev_fit["would_be_considered"]) if match.jev_fit else None
+
+
 def judge_fit(candidate: CandidateProfile, job: JobPosting) -> dict[str, Any] | None:
     """Jev's judgement of `candidate` for `job`, as the dict stored in
     JobMatch.jev_fit, or None when Jev is off or the call failed."""
