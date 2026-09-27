@@ -48,28 +48,44 @@ today, only ~10 of which say so in their URL). And nothing is configured
 as "needs a browser" — sources escalate there on evidence, which is how a
 third of them ended up needing one.
 
-### 2. The score is not one cosine similarity
+### 2. The job that looks like a perfect match usually isn't
+
+A posting at Check Point titled *Agentic AI Solutions Engineer* is a 98%
+text match to my CV. Both are full of AI, LLM, cloud and API. It is also
+a customer-facing pre-sales role that wants firewall industry experience,
+so it is not a job I should ever see at the top of a list.
+
+That is why the score asks two questions instead of one:
+
+**Is this even the kind of job I'm looking for?** Read from the title and
+the keywords. The answer scales everything else, so a posting that isn't
+keeps at most 20% of whatever else it scored. Check Point's lands at 30.
+
+**If it is, how good a fit is it?** A weighted mix, heaviest on the two
+signals that actually separate good from bad here:
+
+| | |
+|---|---|
+| seniority | 45% |
+| skills the posting asks for and I have | 30% |
+| similarity to my CV | 12% |
+| similarity to the role I defined | 8% |
+| location, freshness | 5% |
 
 ```
-final = 100 × role_gate × quality
-role_gate = 0.2 + 0.8 × role_fit
-quality   = 0.45·seniority + 0.30·skills + 0.12·cv_similarity
-          + 0.08·intent + 0.03·location + 0.02·recency
+final = 100 × (0.2 + 0.8 × is_this_the_role) × how_good_a_fit
 ```
 
-The gate is the point. A Check Point posting titled *Agentic AI Solutions
-Engineer* scores 0.98 on raw CV similarity — the text is full of AI, LLM
-and cloud — but it's a pre-sales role wanting firewall experience. The
-gate reads the title, multiplies everything else by how much the job
-*is* the role, and lands it at 30%.
+Seniority carries the most because it is the thing embeddings get wrong:
+to a vector, "Junior Backend Engineer" and "Senior Backend Engineer" look
+almost identical. So it is read as text instead, in Hebrew and English,
+and only from the requirements section: `3-5 שנות ניסיון` means 3 years,
+and what a posting states beats what its title implies.
 
-Seniority is read in Hebrew and English, from the requirements section
-only: `3-5 שנות ניסיון` resolves to 3, and stated years beat the title.
-Student positions get their own tag: they require being enrolled, which
-is not the same thing as junior.
-
-Every match carries its reasons and concerns in plain language.
-[`docs/matching.md`](docs/matching.md) has the measurements behind each weight.
+Every match also comes with its reasons and concerns written out, so a
+score I disagree with can be argued with.
+[`docs/matching.md`](docs/matching.md) shows what was measured to pick
+each weight.
 
 ### 3. Jev: a new kind of model, measured before it was trusted
 
