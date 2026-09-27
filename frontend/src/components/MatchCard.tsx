@@ -43,7 +43,15 @@ export function MatchCard({
 
   return (
     <article className={`card card--interactive match${leaving ? " card--leaving" : ""}`}>
-      <ScoreBadge score={match.final_score} />
+      <div className="match__scores">
+        <ScoreBadge score={match.final_score} />
+        {match.jev_fit && (
+          <div className="match__jev" title={jevFitDetail(match.jev_fit)}>
+            <ScoreBadge score={match.jev_fit.would_be_considered * 100} />
+            <span className="match__jev-label">Jev</span>
+          </div>
+        )}
+      </div>
       <div>
         <div className="match__top">
           <CompanyTag name={match.company_name} />
@@ -71,20 +79,6 @@ export function MatchCard({
           >
             {SENIORITY_FIT_LABELS[match.seniority_fit]}
           </Pill>
-          {match.jev_fit && (
-            <Pill
-              tone={
-                match.jev_fit.would_be_considered >= 0.7
-                  ? "good"
-                  : match.jev_fit.would_be_considered <= 0.3
-                    ? "bad"
-                    : "neutral"
-              }
-              title={jevFitDetail(match.jev_fit)}
-            >
-              Jev {Math.round(match.jev_fit.would_be_considered * 100)}%
-            </Pill>
-          )}
           {match.location_text && <span className="bidi">{match.location_text}</span>}
           {match.location_text && <span className="dot" />}
           <span className="faint">{SOURCE_LABELS[match.source_type]}</span>

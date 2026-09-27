@@ -484,6 +484,25 @@ body::before {
   gap: 18px;
   align-items: start;
 }
+/* The hybrid score, and under it Jev's own probability when the match
+   was judged - the same ring, so the two read side by side. */
+.match__scores {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.match__jev {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+}
+.match__jev-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  letter-spacing: 0.02em;
+}
 .match__top {
   display: flex;
   align-items: center;
