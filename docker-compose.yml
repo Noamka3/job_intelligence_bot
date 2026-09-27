@@ -66,6 +66,10 @@ services:
       DATABASE_URL: postgresql+psycopg://job_bot:job_bot@postgres:5432/job_bot
       REDIS_URL: redis://redis:6379/0
       EMBEDDING_PROVIDER: local
+      # From the project's .env: the crawler asks Jev about new postings
+      # only when a key is set (docs/jev.md); empty means off.
+      TYPESAFE_API_KEY: ${TYPESAFE_API_KEY:-}
+      JEV_MODEL: ${JEV_MODEL:-jev-1.13.0}
     volumes:
       # Must match FASTEMBED_CACHE_PATH in the Dockerfile - fastembed
       # caches under <system temp>/fastembed_cache by default, not
