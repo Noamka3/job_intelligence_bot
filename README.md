@@ -96,7 +96,7 @@ From the live database:
 
 | | |
 |---|---|
-| Companies watched | 242, of which 208 can be read (LinkedIn is never scraped) |
+| Companies watched | 242, of which 208 can be read (LinkedIn postings not included) |
 | Postings stored | 5,513 |
 | Crawl runs | 36,000+ |
 | Tests | 413 |

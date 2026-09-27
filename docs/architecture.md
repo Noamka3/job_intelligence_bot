@@ -32,7 +32,7 @@ is not blocked.
 | Table | Purpose |
 |---|---|
 | `companies` | One row per company from the Google Sheet. |
-| `career_sources` | A company's recruiting source(s): an ATS board or a career page. Classified by `source_type`, which decides the adapter. `UNSUPPORTED` covers LinkedIn-only entries and rows the resolver could not classify - recorded with a reason, never silently dropped. |
+| `career_sources` | A company's recruiting source(s): an ATS board or a career page. Classified by `source_type`, which decides the adapter. `UNSUPPORTED` covers rows the crawler does not read - LinkedIn postings are not included - and rows the resolver could not classify; both are recorded with a reason, never silently dropped. |
 | `candidate_profiles` | Versioned CV snapshots. Exactly one `is_active=True` row at a time, enforced by a partial unique index rather than application logic. Older versions are kept. |
 | `target_roles` | The roles to match against (e.g. "Junior Software Engineer"), each with its own embedding, separate from the CV's. |
 | `job_postings` | Discovered jobs. `source_published_at`/`source_updated_at` (from the ATS, when it reports them) are kept strictly apart from `first_seen_at`/`last_seen_at` (ours); the API never presents one as the other. `jev_reading` holds Jev's read of the posting, `archived_at` marks one the nightly prune emptied of its text (`docs/operations.md`). |

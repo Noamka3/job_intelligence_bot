@@ -39,12 +39,12 @@
 
     <rect x="20" y="126" width="260" height="52" rx="10" fill="#f7f9fd" stroke="#e3e9f4"/>
     <text x="34" y="148" font-size="15" font-weight="600" fill="#0b1b3a">Company sync</text>
-    <text x="34" y="167" font-size="12.5" fill="#5a6782">upsert, never delete · LinkedIn refused</text>
+    <text x="34" y="167" font-size="12.5" fill="#5a6782">upsert, never delete · own career pages only</text>
 
     <path d="M150 182 L150 200" stroke="#8b95a8" stroke-width="1.6" marker-end="url(#arrow)"/>
 
     <rect x="20" y="204" width="260" height="20" rx="6" fill="#fff8e8" stroke="#f3e2b8"/>
-    <text x="34" y="218" font-size="12" fill="#8a6d1f">33 LinkedIn rows never scraped (ToS)</text>
+    <text x="34" y="218" font-size="12" fill="#8a6d1f">33 rows: LinkedIn postings not included</text>
   </g>
 
   <!-- ══ 2. RESOLVER ══ -->

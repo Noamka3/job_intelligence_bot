@@ -31,7 +31,7 @@ yielded a job.
 | `lever` | 1 | Mobileye (Lever's EU region) |
 | `taleo` | 1 | Radware |
 | `jsonld` | 1 | `schema.org/JobPosting` markup |
-| `unsupported` | 33 | LinkedIn rows, never crawled (see below) |
+| `unsupported` | 33 | LinkedIn postings, not included (see below) |
 
 SmartRecruiters has an adapter and no company using it - it verified
 cheaply and costs nothing to keep. Dead sheet rows (`dueto.io`,
@@ -53,15 +53,11 @@ Comeet's `company_uid`, Greenhouse's board token, ...), dedup matches on
 falls back to exact-URL matching for `generic_html`/`jsonld`/`unsupported`
 sources, where there's no such identifier to key on.
 
-## Why LinkedIn is never scraped
+## LinkedIn postings are not included
 
-LinkedIn's User Agreement (§8.2) explicitly prohibits automated
-scraping/crawling. `hiQ Labs v. LinkedIn` established that scraping public
-data isn't federal computer-fraud, but LinkedIn still won on contract
-grounds — hiQ was fined $500k and permanently banned in 2022 for violating
-the User Agreement. A `CareerSource` whose URL resolves to LinkedIn is
-marked `source_type=unsupported` with `unsupported_reason` set, and is
-simply not crawled.
+This project reads companies' own career pages. A sheet row pointing at
+LinkedIn is marked `source_type=unsupported` with a reason and left
+alone, so nothing about it is ever fetched.
 
 ## Verified adapter API formats
 
