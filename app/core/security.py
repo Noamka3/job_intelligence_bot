@@ -14,7 +14,7 @@ Tailscale. See docs/deployment notes in README.md.
 
 Two things Basic auth does not give you, added here: browsers attach
 cached Basic credentials to requests from *other* sites too, so a page
-elsewhere could submit a form to /candidate/resume in the owner's name
+elsewhere could submit a form to /candidate/resume with those credentials
 (CSRF) - state-changing requests that the browser marks as cross-site
 are refused; and nothing slows a password guesser down - an address
 that keeps failing is locked out for a while.

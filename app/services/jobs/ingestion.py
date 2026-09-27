@@ -96,6 +96,34 @@ def get_due_sources(db: Session, limit: int | None = None) -> list[CareerSource]
     return list(db.execute(query).scalars())
 
 
+def _list_jobs(
+    db: Session, run: CrawlRun, source: CareerSource, adapter: JobSourceAdapter
+) -> list[JobStub] | CrawlRun:
+    """The listing call and the two ways it can end the crawl before any
+    job is read: the page turning out to front a real ATS board, or the
+    call failing. Returns the stubs, or the finished CrawlRun."""
+    try:
+        return _first_of_each_id(adapter.list_jobs(source))
+    except BoardBehindPage as found:
+        # The page is a front for a real ATS board. Point the source at
+        # it and let this crawl end: the next one runs the board's own
+        # adapter, which reads it properly instead of scraping a render.
+        _repoint_to_board(source, found.board)
+        run.status = CrawlRunStatus.SUCCESS
+        run.finished_at = utc_now()
+        source.last_attempt_at = utc_now()
+        db.commit()
+        return run
+    except Exception as exc:  # noqa: BLE001 - one broken source must never crash the crawler
+        logger.warning(
+            "crawl failed while listing jobs",
+            extra={"source_id": source.id, "error_type": type(exc).__name__},
+        )
+        if source.source_type == CareerSourceType.GENERIC_HTML and _refused_plain_reader(exc):
+            _hand_to_browser(source, "403")
+        return _fail_run(db, run, source, type(exc).__name__, str(exc)[:2000])
+
+
 def crawl_source(
     db: Session, source: CareerSource, embedding_provider: EmbeddingProvider
 ) -> CrawlRun:
@@ -115,26 +143,10 @@ def crawl_source(
     if adapter is None:
         return _fail_run(db, run, source, "NoAdapter", f"No adapter for {source.source_type}")
 
-    try:
-        stubs = _first_of_each_id(adapter.list_jobs(source))
-    except BoardBehindPage as found:
-        # The page is a front for a real ATS board. Point the source at
-        # it and let this crawl end: the next one runs the board's own
-        # adapter, which reads it properly instead of scraping a render.
-        _repoint_to_board(source, found.board)
-        run.status = CrawlRunStatus.SUCCESS
-        run.finished_at = utc_now()
-        source.last_attempt_at = utc_now()
-        db.commit()
-        return run
-    except Exception as exc:  # noqa: BLE001 - one broken source must never crash the crawler
-        logger.warning(
-            "crawl failed while listing jobs",
-            extra={"source_id": source.id, "error_type": type(exc).__name__},
-        )
-        if source.source_type == CareerSourceType.GENERIC_HTML and _refused_plain_reader(exc):
-            _hand_to_browser(source, "403")
-        return _fail_run(db, run, source, type(exc).__name__, str(exc)[:2000])
+    listed = _list_jobs(db, run, source, adapter)
+    if isinstance(listed, CrawlRun):
+        return listed
+    stubs = listed
 
     existing_jobs: dict[str, JobPosting] = {
         job.external_job_id: job

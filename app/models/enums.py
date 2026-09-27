@@ -75,7 +75,7 @@ class JobFeedbackAction(enum.StrEnum):
 
 
 class ApplicationStatus(enum.StrEnum):
-    """Where an application the user actually sent stands."""
+    """Where an application that was actually sent stands."""
 
     APPLIED = "applied"
     SCREENING = "screening"

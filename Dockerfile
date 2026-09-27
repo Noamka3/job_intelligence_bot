@@ -1,8 +1,8 @@
-# Used by the Celery worker/beat services in docker-compose.yml (Phase 6).
-# Celery's default worker pool doesn't work on native Windows, so those
-# run in Linux containers instead - the same reason Postgres/Redis do.
-# The FastAPI app still runs directly on the Windows host during
-# development (see README) - this image is not currently used for it.
+# The image behind the Celery worker and beat services in
+# docker-compose.yml. Celery's default worker pool doesn't work on native
+# Windows, so those run in Linux containers - the same reason Postgres and
+# Redis do. The FastAPI app runs directly on the host during development,
+# so this image is not used for it.
 FROM python:3.12-slim
 
 WORKDIR /app

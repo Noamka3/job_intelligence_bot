@@ -19,17 +19,17 @@ import { relativeTime } from "../lib/format";
 const LIVE_MS = 30_000;
 
 const DEFAULT_FILTERS: MatchFilters = {
-  // Today's postings that score 60 or more, newest first: the user's
-  // own cut. Below 60 is noise to them, and so is anything older than
-  // ten days, which is the widest window offered. Nothing is deleted.
+  // Today's postings that score 60 or more, newest first. Below 60 is
+  // noise, and so is anything older than ten days - which is why ten is
+  // the widest window offered. Nothing is deleted, only filtered.
   minScore: 60,
   days: 0,
   targetRoleId: null,
   region: null,
   israelOnly: true,
   hideDismissed: true,
-  // Every level, with its tag - the user's choice: they read the tag
-  // and decide, and the narrower views are one click away.
+  // Every level, each with its tag: the tag is enough to decide from,
+  // and the narrower views are one click away.
   seniority: "all",
   query: "",
   sort: "recent",

@@ -9,8 +9,8 @@ crawler needs to know that a link is not new:
   instead of importing it again as "found today". A listing that later
   reports the posting updated brings the text back (ingestion.py).
 - A CLOSED posting past the window is deleted outright.
-- A posting with feedback or an application is never touched: that is
-  the user's own history.
+- A posting with feedback or an application against it is never
+  touched, however old it is.
 
 Runs nightly (app/tasks/retention.py) and on demand (`prune` in the CLI).
 """
@@ -42,8 +42,8 @@ def prune_postings(db: Session, *, now: datetime | None = None) -> PruneResult:
     now = now or utc_now()
     cutoff = now - timedelta(days=get_settings().job_retention_days)
     # Out of every window - neither found nor published inside it, since
-    # the dashboard shows a posting when either date is recent - and not
-    # part of the user's history.
+    # the dashboard shows a posting when either date is recent - and
+    # carrying no feedback or application.
     prunable = (
         JobPosting.first_seen_at < cutoff,
         func.coalesce(JobPosting.source_published_at, JobPosting.first_seen_at) < cutoff,

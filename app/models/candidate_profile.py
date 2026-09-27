@@ -13,7 +13,7 @@ from app.models.constants import EMBEDDING_DIM
 
 
 class CandidateProfile(Base):
-    """A versioned snapshot of the user's CV.
+    """A versioned snapshot of the CV being matched against.
 
     Only one row may have is_active=True at a time (enforced by a partial
     unique index, not just application logic) - previous versions are kept

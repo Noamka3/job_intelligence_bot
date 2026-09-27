@@ -152,7 +152,7 @@ def finish_profile_processing(db: Session, profile_id: int) -> None:
             score_all_active_jobs(db)
         profile.processing_status = PROCESSING_DONE
         profile.processing_note = note
-    except Exception as exc:  # noqa: BLE001 - reported to the user, not swallowed silently
+    except Exception as exc:  # noqa: BLE001 - surfaced on the profile page, not swallowedly
         logger.exception("profile processing failed", extra={"profile_id": profile_id})
         db.rollback()
         profile = db.get(CandidateProfile, profile_id)

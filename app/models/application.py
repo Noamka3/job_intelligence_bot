@@ -11,11 +11,11 @@ from app.models.mixins import TimestampMixin
 
 
 class Application(Base, TimestampMixin):
-    """A job the user actually applied to, and where the process stands.
+    """A job actually applied to, and where the process stands.
 
     Distinct from JobFeedback, which is a stream of quick reactions
     ("interested", "too senior"): an application is one row per job that
-    the user keeps updating as the process moves. Created automatically
+    kept updated as the process moves. Created automatically
     the first time a job gets "applied" feedback; never deleted - a
     rejection or withdrawal is a status, so the history stays.
     """

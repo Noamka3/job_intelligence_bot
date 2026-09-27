@@ -1,7 +1,7 @@
 """Feedback + the applications it opens.
 
 "applied" is the one reaction that means something happened in the real
-world, so it also opens an Application row the user then moves through
+world, so it also opens an Application row that is then moved through
 the process (screening, interview, ...). Everything else stays a plain
 JobFeedback entry.
 """

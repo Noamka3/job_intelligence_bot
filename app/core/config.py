@@ -53,15 +53,15 @@ class Settings(BaseSettings):
     # container on 5432/5433.
     database_url: str = "postgresql+psycopg://job_bot:job_bot@localhost:5544/job_bot"
 
-    # --- Redis / Celery (used from Phase 6 onward) ---
+    # --- Redis / Celery ---
     # Default port 6380 (not 6379) for the same reason - avoids an existing
     # Redis container on this machine.
     redis_url: str = "redis://localhost:6380/0"
 
     # --- Google Sheets ---
-    # No default: the sheet is the owner's own list of companies, and its
-    # id is all anyone needs to read it when the sheet is link-shared.
-    # Set both in .env, which is never committed.
+    # No default: the sheet is a private list of companies, and its id is
+    # all anyone needs to read it when the sheet is link-shared. Set both
+    # in .env, which is never committed.
     google_sheet_id: str = ""
     google_sheet_gid: int = 0
     google_application_credentials: str = "./secrets/google-service-account.json"
@@ -78,7 +78,7 @@ class Settings(BaseSettings):
     embedding_model: str = "text-embedding-3-large"
     embedding_dimensions: int = 384
 
-    # --- LLM (structured CV extraction now; optional reranking from Phase 5) ---
+    # --- LLM (structured CV extraction) ---
     # "ollama" (default): free, runs on this machine, no API key needed -
     # needs `ollama serve` running and the model pulled once
     # (`ollama pull llama3.2:3b`). "openai": needs OPENAI_API_KEY.
@@ -191,7 +191,7 @@ class Settings(BaseSettings):
     # on. The role gate applies either way.
     jev_weight: float = Field(default=0.0, ge=0.0, le=1.0)
 
-    # --- Twilio WhatsApp (Phase 7) ---
+    # --- Twilio WhatsApp (not wired up yet) ---
     twilio_account_sid: str = ""
     twilio_auth_token: str = ""
     twilio_whatsapp_from: str = ""

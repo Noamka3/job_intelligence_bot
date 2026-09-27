@@ -8,7 +8,7 @@ a black box.
     role_gate = floor + (1 - floor) x role_fit
     role_fit  = max(title/keyword role score, 0.6 x calibrated intent similarity)
                 - or just the title/keyword score when the title contains
-                one of the user's excluded terms
+                one of the role's excluded terms
     quality   = weighted sum of seniority, skills, calibrated candidate
                 similarity, calibrated intent similarity, location, recency
               - and, for a match Jev judged, (1 - w) x that + w x Jev's
@@ -159,7 +159,7 @@ def compute_match(
 
     title_role_score, role_explanation = score_role(job.title, job.department, target_role)
     if negative_keyword_hits(job.title, target_role):
-        # The user's veto: "Software Project Manager" reads a lot like a
+        # The role's veto: "Software Project Manager" reads a lot like a
         # software role to an embedding model, which is exactly why
         # "manager" is on their excluded list. No semantic rescue.
         role_fit = title_role_score

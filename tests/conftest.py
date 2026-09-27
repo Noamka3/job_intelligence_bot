@@ -122,7 +122,7 @@ def db_session() -> Generator[Session, None, None]:
 def _fail_fast_if_db_unreachable() -> Generator[None, None, None]:
     """Give a clear error up front instead of many opaque failures.
 
-    Phase 1 integration tests need the docker-compose Postgres/Redis
+    Integration tests need the docker-compose Postgres/Redis
     running (`docker compose up -d postgres redis`).
     """
     try:

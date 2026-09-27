@@ -43,7 +43,7 @@ services:
       timeout: 5s
       retries: 10
 
-  # Phase 6: the scheduler + the process that actually crawls/scores.
+  # The scheduler, and the process that actually crawls and scores.
   # Both use the app's own image (see Dockerfile) and talk to
   # postgres/redis over the internal Docker network - note the URLs here
   # use the service names and *container* ports (5432/6379), not the

@@ -114,7 +114,7 @@ def test_url_variant_of_same_board_does_not_create_a_second_source(
     """A sheet edit that only changes a query string (tracking param,
     office filter, ...) must not spawn a duplicate CareerSource for what
     both resolve to the same board (same source_type + external_identifier)
-    - found for real on Torq/Tango during Phase 4 live verification: two
+    - found for real on Torq/Tango during live verification: two
     URL variants had created two sources, and each independently pulled
     (and stored) the same real jobs, doubling them.
     """

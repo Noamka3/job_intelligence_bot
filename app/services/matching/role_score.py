@@ -22,7 +22,7 @@ def _mentions(haystack: str, term: str) -> bool:
 
 
 def negative_keyword_hits(job_title: str, target_role: TargetRole) -> list[str]:
-    """The user's excluded terms found in the title. Checked before
+    """The target role's excluded terms found in the title. Checked before
     anything else here, and in scoring.py it also vetoes the semantic
     "reads like the role" rescue: a "Software Project Manager" reads a lot
     like a software role to an embedding model, which is exactly why the
@@ -34,7 +34,7 @@ def score_role(
     job_title: str, job_department: str | None, target_role: TargetRole
 ) -> tuple[float, str]:
     # Exclusions first: "Senior Software Engineer" contains the alias
-    # "Software Engineer" too, and the excluded term is what the user
+    # "Software Engineer" too, and the excluded term is what the role
     # actually cares about there.
     negative_hits = negative_keyword_hits(job_title, target_role)
     if negative_hits:
@@ -47,7 +47,7 @@ def score_role(
     haystack = job_title + " " + (job_department or "")
     positive_hits = [kw for kw in target_role.positive_keywords if _mentions(haystack, kw)]
     if positive_hits:
-        # One of the user's own keywords in the title ("backend" in "Junior
+        # One of the role's own keywords in the title ("backend" in "Junior
         # Backend Developer") is strong evidence on its own; two settle it.
         score = min(1.0, 0.6 + 0.2 * len(positive_hits))
         return score, f"title/department matches keyword(s): {', '.join(positive_hits)}"

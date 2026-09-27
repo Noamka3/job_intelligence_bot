@@ -10,7 +10,7 @@ from app.models.mixins import TimestampMixin
 
 
 class TargetRole(Base, TimestampMixin):
-    """A configurable role the user wants matched against, e.g. "Junior
+    """A role postings are matched against, e.g. "Junior
     Software Engineer". Multiple roles can be enabled at once; matching
     scores a job against each enabled role independently (see JobMatch).
     """

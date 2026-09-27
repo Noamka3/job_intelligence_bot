@@ -48,7 +48,7 @@ def ensure_public_url(url: str) -> None:
     attacker: 127.0.0.1 and 10.x reach services meant to be internal, and
     169.254.169.254 is the cloud metadata endpoint that hands out
     credentials. A hostname is left to DNS - this project's URLs come from
-    the owner's own spreadsheet, and the deployment keeps the crawler off
+    a hand-maintained spreadsheet, and the deployment keeps the crawler off
     any private network (see README).
     """
     host = (urlparse(url).hostname or "").strip("[]")

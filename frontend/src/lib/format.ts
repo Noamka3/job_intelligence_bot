@@ -204,7 +204,7 @@ export const COMPONENT_LABELS: { key: string; label: string; hint: string }[] = 
 ];
 
 /** Every section of the structured CV profile, in display order, with a
- * Hebrew label - so the user can check what the scan understood. */
+ * Hebrew label - so a missed skill is visible, not silently absent. */
 export const PROFILE_SECTIONS: { key: string; label: string }[] = [
   { key: "programming_languages", label: "שפות תכנות" },
   { key: "frameworks", label: "פריימוורקים וספריות" },

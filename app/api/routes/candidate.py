@@ -115,8 +115,9 @@ def get_profiles(db: Session = Depends(get_db)) -> list[CandidateProfileRead]:
 
 @router.get("/profiles/{profile_id}/text", response_model=CandidateProfileText)
 def get_profile_text(profile_id: int, db: Session = Depends(get_db)) -> CandidateProfileText:
-    """What was actually read out of the uploaded file - so the user can
-    check by eye that nothing was lost in parsing."""
+    """The raw text extracted from the uploaded file. The profile page
+    shows it next to the structured fields, so a skill the parser missed
+    is visible rather than silently absent."""
     profile = db.get(CandidateProfile, profile_id)
     if profile is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Profile not found")
