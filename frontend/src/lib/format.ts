@@ -1,5 +1,6 @@
 import type {
   JevFit,
+  JevReading,
   ApplicationStatus,
   CrawlRunStatus,
   FeedbackAction,
@@ -97,6 +98,33 @@ export const JEV_EXPERIENCE_LABELS: Record<JevFit["experience_level"], string> =
   matches: "רמת הניסיון מתאימה",
   above: "יש לך יותר ניסיון ממה שצריך",
 };
+
+export const JEV_ROLE_FAMILY_LABELS: Record<string, string> = {
+  software_development: "פיתוח תוכנה",
+  qa_automation: "QA / אוטומציה",
+  data: "דאטה",
+  devops_it: "DevOps / IT",
+  hardware: "חומרה",
+  product_management: "מוצר / פרויקטים",
+  other: "תחום אחר",
+};
+
+export const JEV_SENIORITY_LABELS: Record<JevReading["seniority"], string> = {
+  student: "משרת סטודנט",
+  junior: "ג'וניור",
+  mid: "2–4 שנים",
+  senior: "סניור",
+  lead: "ניהול",
+};
+
+/** Jev's reading of a posting in one line, next to the rule-based tag. */
+export function jevReadingSummary(r: JevReading): string {
+  const family = JEV_ROLE_FAMILY_LABELS[r.role_family] ?? r.role_family;
+  const level = `${JEV_SENIORITY_LABELS[r.seniority]} (${Math.round(r.seniority_confidence * 100)}%)`;
+  const students = r.students_only >= 0.5 ? "רק לסטודנטים" : "לא רק לסטודנטים";
+  const experience = r.experience_required >= 0.5 ? "דורש ניסיון" : "לא דורש ניסיון";
+  return `${family} · ${level} · ${students} · ${experience}`;
+}
 
 /** Jev's three answers in one line, for the card's tooltip. */
 export function jevFitDetail(fit: JevFit): string {

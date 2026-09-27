@@ -9,6 +9,7 @@ import { useAsync } from "../hooks/useAsync";
 import {
   COMPONENT_LABELS,
   JEV_EXPERIENCE_LABELS,
+  jevReadingSummary,
   SOURCE_LABELS,
   externalHref,
   formatDate,
@@ -125,6 +126,11 @@ export function JobPage() {
         <span>נמצאה על ידי הבוט {relativeTime(j.first_seen_at)}</span>
         <span>נראתה לאחרונה {relativeTime(j.last_seen_at)}</span>
       </div>
+      {j.jev_reading && (
+        <div className="row faint" style={{ marginBottom: 20 }} title={j.jev_reading.model}>
+          <span>Jev קורא את המשרה כך: {jevReadingSummary(j.jev_reading)}</span>
+        </div>
+      )}
 
       {m && (
         <section className="card">

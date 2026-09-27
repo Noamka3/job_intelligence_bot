@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -28,9 +29,21 @@ class JobRead(BaseModel):
     status: JobStatus
 
 
+class JevReading(BaseModel):
+    model: str
+    role_family: str
+    role_family_confidence: float
+    seniority: Literal["student", "junior", "mid", "senior", "lead"]
+    seniority_confidence: float
+    students_only: float
+    experience_required: float
+
+
 class JobDetailRead(JobRead):
     description: str | None
     responsibilities: str | None
     qualifications: str | None
     required_skills: list[str]
     preferred_skills: list[str]
+    # Jev's reading of the posting, when it has been asked (docs/jev.md).
+    jev_reading: JevReading | None

@@ -119,6 +119,18 @@ export interface Job {
   qualifications: string | null;
   required_skills: string[];
   preferred_skills: string[];
+  // Jev's reading of the posting, when it has been asked.
+  jev_reading: JevReading | null;
+}
+
+export interface JevReading {
+  model: string;
+  role_family: string;
+  role_family_confidence: number;
+  seniority: "student" | "junior" | "mid" | "senior" | "lead";
+  seniority_confidence: number;
+  students_only: number; // 0-1
+  experience_required: number; // 0-1
 }
 
 export interface TargetRole {
